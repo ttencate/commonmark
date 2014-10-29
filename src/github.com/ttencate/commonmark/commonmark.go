@@ -117,14 +117,54 @@ func (p *inlineParser) parse() {
 		var inline Inline
 		switch p.data[p.pos] {
 		case '\n':
-			p.finalizeString()
-			inline = &softLineBreak{}
+			hardBreak := false
+			if p.pos >= 1 && p.data[p.pos-1] == '\\' {
+				hardBreak = true
+				p.pos--
+				p.finalizeString()
+				p.pos++
+			} else if p.pos >= 2 && p.data[p.pos-1] == ' ' && p.data[p.pos-2] == ' ' {
+				hardBreak = true
+				p.pos -= 2
+				p.finalizeString()
+				p.pos += 2
+			} else {
+				p.finalizeString()
+			}
+			if hardBreak {
+				inline = &hardLineBreak{}
+			} else {
+				inline = &softLineBreak{}
+			}
 			p.pos++
 			// "Spaces at [...] the beginning of the next line are removed."
 			for p.pos < len(p.data) && p.data[p.pos] == ' ' {
 				p.pos++
 			}
-			p.stringStart = p.pos
+			p.resetString()
+		case '`':
+			// "A backtick string is a string of one or more backtick
+			// characters (`) that is neither preceded nor followed by a
+			// backtick."
+			var numBackticks int
+			for p.pos+numBackticks < len(p.data) && p.data[p.pos+numBackticks] == '`' {
+				numBackticks++
+			}
+			closing := backtickStringIndex(p.data, p.pos+numBackticks, numBackticks)
+			if closing == -1 {
+				p.pos += numBackticks
+				break
+			}
+
+			p.finalizeString()
+			p.pos += numBackticks
+
+			content := p.data[p.pos:closing]
+			content = collapseSpace(bytes.TrimSpace(content))
+
+			inline = &codeSpan{content}
+			p.pos = closing + numBackticks
+			p.resetString()
 		default:
 			p.pos++
 		}
@@ -134,6 +174,44 @@ func (p *inlineParser) parse() {
 		}
 	}
 	p.finalizeString()
+}
+
+func backtickStringIndex(data []byte, start, length int) int {
+	var count int
+	for i := start; i < len(data); i++ {
+		if data[i] == '`' {
+			count++
+			if count == length {
+				if i+1 >= len(data) || data[i+1] != '`' {
+					return i + 1 - count
+				}
+			}
+		} else {
+			count = 0
+		}
+	}
+	return -1
+}
+
+func collapseSpace(data []byte) []byte {
+	var out []byte
+	var prevWasSpace bool
+	for _, c := range data {
+		if c == ' ' || c == '\n' {
+			if !prevWasSpace {
+				out = append(out, ' ')
+				prevWasSpace = true
+			}
+		} else {
+			out = append(out, c)
+			prevWasSpace = false
+		}
+	}
+	return out
+}
+
+func (p *inlineParser) resetString() {
+	p.stringStart = p.pos
 }
 
 func (p *inlineParser) finalizeString() {

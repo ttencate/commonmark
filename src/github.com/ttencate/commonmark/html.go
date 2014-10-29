@@ -33,7 +33,11 @@ func inlineToHTML(i Inline, out io.Writer) {
 	case *softLineBreak:
 		io.WriteString(out, "\n")
 	case *hardLineBreak:
-		io.WriteString(out, "<br />")
+		io.WriteString(out, "<br />\n")
+	case *codeSpan:
+		io.WriteString(out, "<code>")
+		out.Write(t.content)
+		io.WriteString(out, "</code>")
 	default:
 		log.Panicf("no HTML converter registered for Inline type %T", i)
 	}
