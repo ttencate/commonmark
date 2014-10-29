@@ -20,8 +20,13 @@ Documentation
 Developing
 ----------
 
+After you cloned the repository, please run
+
+    ./scripts/install_hooks.sh
+
+to install a Git pre-commit hook that reminds you to run `gofmt`.
+
 - TODO write about running the test suite
-- TODO gofmt pre-commit hook
 
 Benchmarks
 ----------
