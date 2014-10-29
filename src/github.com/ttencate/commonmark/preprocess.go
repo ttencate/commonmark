@@ -3,6 +3,7 @@ package commonmark
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 )
 
 // newScanner returns a new bufio.Scanner suitable for reading lines.
@@ -46,27 +47,25 @@ func tabsToSpaces(line []byte) []byte {
 	const tabStop = 4
 
 	var tabCount int
-	for remaining := line; len(remaining) > 0; {
-		i := bytes.IndexByte(remaining, '\n')
-		if i == -1 {
-			break
+	for _, c := range line {
+		if c == '\t' {
+			tabCount++
 		}
-		remaining = remaining[i+1:]
-		tabCount++
 	}
 	if tabCount == 0 {
 		return line
 	}
 
-	output := make([]byte, 0, len(line)+4*tabCount)
-	for i := 0; i < len(line); i++ {
-		if line[i] == '\t' {
-
-			spaces := bytes.Repeat([]byte{' '}, tabStop-i%tabStop)
+	output := make([]byte, 0, len(line)+3*tabCount)
+	var runeCount int
+	for _, c := range string(line) {
+		if c == '\t' {
+			spaces := bytes.Repeat([]byte{' '}, tabStop-runeCount%tabStop)
 			output = append(output, spaces...)
 		} else {
-			output = append(output, line[i])
+			output = append(output, []byte(fmt.Sprintf("%c", c))...)
 		}
+		runeCount++
 	}
 	return output
 }
