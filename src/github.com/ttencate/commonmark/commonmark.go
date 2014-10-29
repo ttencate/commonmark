@@ -4,6 +4,8 @@ package commonmark
 
 import (
 	"bytes"
+	"fmt"
+	"strconv"
 	"unicode"
 )
 
@@ -185,6 +187,57 @@ func (p *inlineParser) parse() {
 			p.pos++
 			inline = &stringInline{p.data[p.pos : p.pos+1]}
 			p.pos++
+			p.resetString()
+		case '&':
+			// "[A]ll valid HTML entities in any context are recognized as such
+			// and converted into unicode characters before they are stored in
+			// the AST."
+			semicolon := bytes.IndexByte(p.data[p.pos+1:], ';')
+			// "Although HTML5 does accept some entities without a trailing
+			// semicolon (such as &copy), these are not recognized as entities
+			// here, because it makes the grammar too ambiguous."
+			if semicolon < 0 {
+				p.pos++
+				break
+			}
+			semicolon += p.pos + 1
+			entity := string(p.data[p.pos+1 : semicolon])
+			var codepoints string
+
+			if len(entity) > 0 {
+				if entity[0] == '#' {
+					if len(entity) > 1 {
+						if entity[1] == 'x' || entity[1] == 'X' {
+							// "Hexadecimal entities consist of &# + either X or x + a
+							// string of 1-8 hexadecimal digits + ;."
+							if codepoint, err := strconv.ParseUint(entity[2:], 16, 32); err == nil {
+								codepoints = fmt.Sprintf("%c", codepoint)
+							}
+						} else {
+							// "Decimal entities consist of &# + a string of 1–8 arabic
+							// digits + ;. Again, these entities need to be recognised and
+							// tranformed into their corresponding UTF8 codepoints. Invalid
+							// Unicode codepoints will be written as the “unknown
+							// codepoint” character (0xFFFD)."
+							if codepoint, err := strconv.ParseUint(entity[1:], 10, 32); err == nil {
+								codepoints = fmt.Sprintf("%c", codepoint)
+							}
+						}
+					}
+				} else {
+					// "Named entities consist of & + any of the valid HTML5 entity names + ;."
+					codepoints = htmlEntities[entity]
+				}
+			}
+
+			if len(codepoints) == 0 {
+				p.pos++
+				break
+			}
+
+			p.finalizeString()
+			inline = &stringInline{[]byte(codepoints)}
+			p.pos = semicolon + 1
 			p.resetString()
 		default:
 			p.pos++
