@@ -1,9 +1,11 @@
 CommonMark for Go
 =================
 
-[`commonmark`](https://github.com/ttencate/commonmark) is a standards-compliant,
-pluggable and fast [CommonMark](http://commonmark.org) implementation for
-[Go](http://golang.org) (golang).
+[`commonmark`](https://github.com/ttencate/commonmark) aims to be a
+standards-compliant, pluggable and fast [CommonMark](http://commonmark.org)
+implementation for [Go](http://golang.org) (golang).
+
+It is currently being implemented, and not ready for use yet.
 
 Installing
 ----------
