@@ -173,6 +173,19 @@ func (p *inlineParser) parse() {
 			inline = &codeSpan{content}
 			p.pos = closing + numBackticks
 			p.resetString()
+		case '\\':
+			// "Backslashes before other characters are treated as literal backslashes."
+			if p.pos+1 >= len(p.data) || !isASCIIPunct(p.data[p.pos+1]) {
+				p.pos++
+				break
+			}
+
+			// "Any ASCII punctuation character may be backslash-escaped."
+			p.finalizeString()
+			p.pos++
+			inline = &stringInline{p.data[p.pos : p.pos+1]}
+			p.pos++
+			p.resetString()
 		default:
 			p.pos++
 		}
@@ -182,6 +195,12 @@ func (p *inlineParser) parse() {
 		}
 	}
 	p.finalizeString()
+}
+
+var asciiPunct = []byte("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+
+func isASCIIPunct(char byte) bool {
+	return bytes.IndexByte(asciiPunct, char) >= 0
 }
 
 func backtickStringIndex(data []byte, start, length int) int {
