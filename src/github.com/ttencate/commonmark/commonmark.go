@@ -4,7 +4,6 @@ package commonmark
 
 import (
 	"bytes"
-	"log"
 )
 
 // ToHTMLBytes converts text formatted in CommonMark into the corresponding
@@ -23,7 +22,6 @@ func ToHTMLBytes(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("%+q", doc)
 
 	var buffer bytes.Buffer
 	toHTML(doc, &buffer)
