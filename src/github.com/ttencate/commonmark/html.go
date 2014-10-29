@@ -26,5 +26,11 @@ func inlineToHTML(i Inline, out io.Writer) {
 	switch t := i.(type) {
 	case *stringInline:
 		out.Write(t.content)
+	case *multipleInline:
+		for _, child := range t.children {
+			inlineToHTML(child, out)
+		}
+	case *softLineBreak:
+		io.WriteString(out, "\n")
 	}
 }

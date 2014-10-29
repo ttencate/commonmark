@@ -91,6 +91,28 @@ func processInlines(b Block) {
 }
 
 func parseInlines(data []byte) Inline {
+	// I can't find where the spec decrees this. But the reference implementation does it this way:
+	// https://github.com/jgm/CommonMark/blob/67619a5d5c71c44565a9a0413aaf78f9baece528/src/inlines.c#L183
 	data = bytes.TrimRightFunc(data, unicode.IsSpace)
-	return &stringInline{data}
+
+	root := &multipleInline{}
+	for len(data) > 0 {
+		var inline Inline
+		inline, data = parseInline(data)
+		root.children = append(root.children, inline)
+	}
+	return root
+}
+
+func parseInline(data []byte) (Inline, []byte) {
+	switch data[0] {
+	case '\n':
+		return &softLineBreak{}, data[1:]
+	default:
+		nextSpecialChar := bytes.IndexAny(data, "\n")
+		if nextSpecialChar < 0 {
+			nextSpecialChar = len(data)
+		}
+		return &stringInline{data[:nextSpecialChar]}, data[nextSpecialChar:]
+	}
 }
