@@ -118,25 +118,28 @@ func (p *inlineParser) parse() {
 		switch p.data[p.pos] {
 		case '\n':
 			hardBreak := false
+			newlinePos := p.pos
 			if p.pos >= 1 && p.data[p.pos-1] == '\\' {
 				hardBreak = true
 				p.pos--
-				p.finalizeString()
-				p.pos++
 			} else if p.pos >= 2 && p.data[p.pos-1] == ' ' && p.data[p.pos-2] == ' ' {
 				hardBreak = true
 				p.pos -= 2
-				p.finalizeString()
-				p.pos += 2
-			} else {
-				p.finalizeString()
 			}
+
+			// "Spaces at the end of the line [...] are removed."
+			for p.pos > 0 && p.data[p.pos - 1] == ' ' {
+				p.pos--
+			}
+			p.finalizeString()
+
 			if hardBreak {
 				inline = &hardLineBreak{}
 			} else {
 				inline = &softLineBreak{}
 			}
-			p.pos++
+
+			p.pos = newlinePos + 1
 			// "Spaces at [...] the beginning of the next line are removed."
 			for p.pos < len(p.data) && p.data[p.pos] == ' ' {
 				p.pos++
@@ -219,7 +222,5 @@ func (p *inlineParser) finalizeString() {
 		return
 	}
 	str := p.data[p.stringStart:p.pos]
-	// "Spaces at the end of the line [...] are removed."
-	str = bytes.TrimRight(str, " ")
 	p.root.children = append(p.root.children, &stringInline{str})
 }
