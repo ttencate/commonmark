@@ -3,6 +3,7 @@ package commonmark
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"go/build"
 	"io"
 	"log"
@@ -19,6 +20,11 @@ type example struct {
 	output  []byte
 }
 
+type result struct {
+	run    int
+	failed int
+}
+
 func TestSpec(t *testing.T) {
 	specFile, err := openSpecFile()
 	if err != nil {
@@ -28,22 +34,37 @@ func TestSpec(t *testing.T) {
 	examples := make(chan example)
 	go readExamples(specFile, examples)
 
-	var count, failures int
+	var res result
+	sectionResults := make(map[string]*result)
 	for ex := range examples {
-		count++
+		var failed bool
 		actualOutput, err := ToHTMLBytes(ex.input)
 		if err != nil {
-			failures++
+			failed = true
 			t.Errorf("error in example %d: %s\ninput:\n%s", ex.number, err, ex.input)
-			continue
-		}
-		if !bytes.Equal(actualOutput, ex.output) {
-			failures++
+		} else if !bytes.Equal(actualOutput, ex.output) {
+			failed = true
 			t.Errorf("incorrect output in section \"%s\" example %d\ninput:\n%s\nexpected output:\n%s\nactual output:\n%s",
 				ex.section, ex.number, ex.input, ex.output, actualOutput)
 		}
+
+		if sectionResults[ex.section] == nil {
+			sectionResults[ex.section] = &result{}
+		}
+		res.run++
+		sectionResults[ex.section].run++
+		if failed {
+			res.failed++
+			sectionResults[ex.section].failed++
+		}
 	}
-	t.Logf("spec test complete\ntests run: %3d\nsuccesses: %3d\nfailures:  %3d", count, count-failures, failures)
+	output := "spec test complete\n"
+	output += fmt.Sprintf("%-28s   CNT  PASS  FAIL\n", "")
+	for section, res := range sectionResults {
+		output += fmt.Sprintf("%-28s   %3d   %3d   %3d\n", section, res.run, res.run-res.failed, res.failed)
+	}
+	output += fmt.Sprintf("%-28s   %3d   %3d   %3d\n", "TOTAL", res.run, res.run-res.failed, res.failed)
+	t.Log(output)
 }
 
 func openSpecFile() (*os.File, error) {
