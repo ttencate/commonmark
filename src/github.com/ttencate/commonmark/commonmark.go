@@ -119,16 +119,21 @@ func (p *inlineParser) parse() {
 		case '\n':
 			hardBreak := false
 			newlinePos := p.pos
-			if p.pos >= 1 && p.data[p.pos-1] == '\\' {
-				hardBreak = true
-				p.pos--
-			} else if p.pos >= 2 && p.data[p.pos-1] == ' ' && p.data[p.pos-2] == ' ' {
+			// "A line break (not in a code span or HTML tag) that is preceded
+			// by two or more spaces is parsed as a hard line break."
+			if p.pos >= 2 && p.data[p.pos-1] == ' ' && p.data[p.pos-2] == ' ' {
 				hardBreak = true
 				p.pos -= 2
 			}
+			// "For a more visible alternative, a backslash before the newline
+			// may be used instead of two spaces."
+			if p.pos >= 1 && p.data[p.pos-1] == '\\' {
+				hardBreak = true
+				p.pos--
+			}
 
 			// "Spaces at the end of the line [...] are removed."
-			for p.pos > 0 && p.data[p.pos - 1] == ' ' {
+			for p.pos > 0 && p.data[p.pos-1] == ' ' {
 				p.pos--
 			}
 			p.finalizeString()
