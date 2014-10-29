@@ -4,4 +4,4 @@
 cd $(dirname "$0")/..
 
 # Install Git hooks
-ln -s scripts/pre-commit.sh .git/hooks/pre-commit
+ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
