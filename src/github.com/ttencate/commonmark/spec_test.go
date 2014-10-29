@@ -35,6 +35,7 @@ func TestSpec(t *testing.T) {
 	go readExamples(specFile, examples)
 
 	var res result
+	var sections []string
 	sectionResults := make(map[string]*result)
 	for ex := range examples {
 		var failed bool
@@ -49,6 +50,7 @@ func TestSpec(t *testing.T) {
 		}
 
 		if sectionResults[ex.section] == nil {
+			sections = append(sections, ex.section)
 			sectionResults[ex.section] = &result{}
 		}
 		res.run++
@@ -60,7 +62,8 @@ func TestSpec(t *testing.T) {
 	}
 	output := "spec test complete\n"
 	output += fmt.Sprintf("%-28s   CNT  PASS  FAIL\n", "")
-	for section, res := range sectionResults {
+	for _, section := range sections {
+		res := sectionResults[section]
 		output += fmt.Sprintf("%-28s   %3d   %3d   %3d\n", section, res.run, res.run-res.failed, res.failed)
 	}
 	output += fmt.Sprintf("%-28s   %3d   %3d   %3d\n", "TOTAL", res.run, res.run-res.failed, res.failed)
