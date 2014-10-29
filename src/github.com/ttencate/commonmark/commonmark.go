@@ -78,8 +78,8 @@ func parseBlocks(data []byte) (*document, error) {
 func processInlines(b Block) {
 	switch t := b.(type) {
 	case *paragraph:
-		// Final spaces are stripped before inline parsing, so a paragraph that
-		// ends with two or more spaces will not end with a hard line break.
+		// "Final spaces are stripped before inline parsing, so a paragraph that
+		// ends with two or more spaces will not end with a hard line break."
 		t.inlineContent = parseInlines(bytes.TrimRight(t.content, " "))
 	}
 
@@ -107,12 +107,19 @@ func parseInlines(data []byte) Inline {
 func parseInline(data []byte) (Inline, []byte) {
 	switch data[0] {
 	case '\n':
-		return &softLineBreak{}, data[1:]
+		pos := 1
+		// "Spaces at [...] the beginning of the next line are removed."
+		for pos < len(data) && data[pos] == ' ' {
+			pos++
+		}
+		return &softLineBreak{}, data[pos:]
 	default:
 		nextSpecialChar := bytes.IndexAny(data, "\n")
 		if nextSpecialChar < 0 {
 			nextSpecialChar = len(data)
 		}
-		return &stringInline{data[:nextSpecialChar]}, data[nextSpecialChar:]
+		// "Spaces at the end of the line [...] are removed."
+		str := bytes.TrimRight(data[:nextSpecialChar], " ")
+		return &stringInline{str}, data[nextSpecialChar:]
 	}
 }
