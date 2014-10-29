@@ -2,6 +2,11 @@
 // HTML.
 package commonmark
 
+import (
+	"bytes"
+	"log"
+)
+
 // ToHTMLBytes converts text formatted in CommonMark into the corresponding
 // HTML.
 //
@@ -14,19 +19,45 @@ package commonmark
 // accepting untrusted user input, you must run the output through a sanitizer
 // before sending it to a browser.
 func ToHTMLBytes(data []byte) ([]byte, error) {
+	doc, err := parse(data)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("%+q", doc)
+
+	var buffer bytes.Buffer
+	toHTML(doc, &buffer)
+	return buffer.Bytes(), nil
+}
+
+func parse(data []byte) (*document, error) {
+	// See http://spec.commonmark.org/0.7/#appendix-a-a-parsing-strategy
 	scanner := newScanner(data)
-	var html []byte
+	doc := &document{}
+	openBlocks := []Block{doc}
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		line = tabsToSpaces(line)
 
-		html = append(html, line...)
-		html = append(html, '\n')
-	}
+		var openBlock Block
+		for _, openBlock = range openBlocks {
+			if _, ok := openBlock.(LeafBlock); ok {
+				break
+			}
+		}
 
+		leafBlock, ok := openBlock.(LeafBlock)
+		if !ok {
+			containerBlock := openBlock.(ContainerBlock)
+			leafBlock = &paragraph{}
+			containerBlock.AppendChild(leafBlock)
+			openBlocks = append(openBlocks, leafBlock)
+		}
+		leafBlock.AppendLine(line)
+	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 
-	return html, nil
+	return doc, nil
 }

@@ -5,6 +5,7 @@ import (
 	"bytes"
 )
 
+// newScanner returns a new bufio.Scanner suitable for reading lines.
 func newScanner(data []byte) *bufio.Scanner {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Split(scanLines)
