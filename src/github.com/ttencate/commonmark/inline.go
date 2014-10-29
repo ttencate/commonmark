@@ -9,6 +9,8 @@ type stringInline struct {
 
 type softLineBreak struct{}
 
+type hardLineBreak struct{}
+
 type multipleInline struct {
 	children []Inline
 }

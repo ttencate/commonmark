@@ -90,36 +90,58 @@ func processInlines(b Block) {
 	}
 }
 
+type inlineParser struct {
+	data        []byte
+	pos         int
+	stringStart int
+
+	root *multipleInline
+}
+
 func parseInlines(data []byte) Inline {
-	// I can't find where the spec decrees this. But the reference implementation does it this way:
+	// I can't find where the spec decrees this. But the reference
+	// implementation does it this way:
 	// https://github.com/jgm/CommonMark/blob/67619a5d5c71c44565a9a0413aaf78f9baece528/src/inlines.c#L183
 	data = bytes.TrimRightFunc(data, unicode.IsSpace)
 
-	root := &multipleInline{}
-	for len(data) > 0 {
-		var inline Inline
-		inline, data = parseInline(data)
-		root.children = append(root.children, inline)
+	parser := inlineParser{
+		data: data,
+		root: &multipleInline{},
 	}
-	return root
+	parser.parse()
+	return parser.root
 }
 
-func parseInline(data []byte) (Inline, []byte) {
-	switch data[0] {
-	case '\n':
-		pos := 1
-		// "Spaces at [...] the beginning of the next line are removed."
-		for pos < len(data) && data[pos] == ' ' {
-			pos++
+func (p *inlineParser) parse() {
+	for p.pos < len(p.data) {
+		var inline Inline
+		switch p.data[p.pos] {
+		case '\n':
+			p.finalizeString()
+			inline = &softLineBreak{}
+			p.pos++
+			// "Spaces at [...] the beginning of the next line are removed."
+			for p.pos < len(p.data) && p.data[p.pos] == ' ' {
+				p.pos++
+			}
+			p.stringStart = p.pos
+		default:
+			p.pos++
 		}
-		return &softLineBreak{}, data[pos:]
-	default:
-		nextSpecialChar := bytes.IndexAny(data, "\n")
-		if nextSpecialChar < 0 {
-			nextSpecialChar = len(data)
+
+		if inline != nil {
+			p.root.children = append(p.root.children, inline)
 		}
-		// "Spaces at the end of the line [...] are removed."
-		str := bytes.TrimRight(data[:nextSpecialChar], " ")
-		return &stringInline{str}, data[nextSpecialChar:]
 	}
+	p.finalizeString()
+}
+
+func (p *inlineParser) finalizeString() {
+	if p.stringStart >= p.pos {
+		return
+	}
+	str := p.data[p.stringStart:p.pos]
+	// "Spaces at the end of the line [...] are removed."
+	str = bytes.TrimRight(str, " ")
+	p.root.children = append(p.root.children, &stringInline{str})
 }
