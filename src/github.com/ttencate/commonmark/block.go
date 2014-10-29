@@ -65,3 +65,49 @@ type paragraph struct {
 func (p *paragraph) AppendLine(line []byte) {
 	p.simpleLeaf.AppendLine(bytes.TrimLeft(line, " "))
 }
+
+func parseBlocks(data []byte) (*document, error) {
+	scanner := newScanner(data)
+	doc := &document{}
+	openBlocks := []Block{doc}
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		line = tabsToSpaces(line)
+		line = append(line, '\n')
+
+		var openBlock Block
+		for _, openBlock = range openBlocks {
+			if _, ok := openBlock.(LeafBlock); ok {
+				break
+			}
+		}
+
+		leafBlock, ok := openBlock.(LeafBlock)
+		if !ok {
+			containerBlock := openBlock.(ContainerBlock)
+			leafBlock = &paragraph{}
+			containerBlock.AppendChild(leafBlock)
+			openBlocks = append(openBlocks, leafBlock)
+		}
+		leafBlock.AppendLine(line)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+func processInlines(b Block) {
+	switch t := b.(type) {
+	case *paragraph:
+		// "Final spaces are stripped before inline parsing, so a paragraph that
+		// ends with two or more spaces will not end with a hard line break."
+		t.inlineContent = parseInlines(bytes.TrimRight(t.content, " "))
+	}
+
+	if container, ok := b.(ContainerBlock); ok {
+		for _, child := range container.Children() {
+			processInlines(child)
+		}
+	}
+}
