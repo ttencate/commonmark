@@ -1,5 +1,9 @@
 package commonmark
 
+import (
+	"bytes"
+)
+
 // Block represents a node in the parse tree. It can either be a ContainerBlock
 // or a LeafBlock.
 type Block interface {
@@ -39,13 +43,11 @@ func (c *simpleContainer) AppendChild(b Block) {
 
 // simpleLeaf implements the LeafBlock interface in the naive way.
 type simpleLeaf struct {
-	content []byte
+	content       []byte
+	inlineContent Inline
 }
 
 func (l *simpleLeaf) AppendLine(line []byte) {
-	if len(l.content) > 0 {
-		l.content = append(l.content, '\n')
-	}
 	l.content = append(l.content, line...)
 }
 
@@ -58,4 +60,8 @@ type document struct {
 // be interpreted as other kinds of blocks.
 type paragraph struct {
 	simpleLeaf
+}
+
+func (p *paragraph) AppendLine(line []byte) {
+	p.simpleLeaf.AppendLine(bytes.TrimLeft(line, " "))
 }

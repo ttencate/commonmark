@@ -12,6 +12,7 @@ import (
 )
 
 type example struct {
+	number int
 	input  []byte
 	output []byte
 }
@@ -31,13 +32,13 @@ func TestSpec(t *testing.T) {
 		actualOutput, err := ToHTMLBytes(ex.input)
 		if err != nil {
 			failures++
-			t.Errorf("error: %s\ninput:\n%s", err, ex.input)
+			t.Errorf("error in example %d: %s\ninput:\n%s", ex.number, err, ex.input)
 			continue
 		}
 		if !bytes.Equal(actualOutput, ex.output) {
 			failures++
-			t.Errorf("incorrect output\ninput:\n%s\nexpected output:\n%s\nactual output:\n%s",
-				ex.input, ex.output, actualOutput)
+			t.Errorf("incorrect output in example %d\ninput:\n%s\nexpected output:\n%s\nactual output:\n%s",
+				ex.number, ex.input, ex.output, actualOutput)
 		}
 	}
 	t.Logf("spec test complete\ntests run: %3d\nsuccesses: %3d\nfailures:  %3d", count, count-failures, failures)
@@ -67,6 +68,7 @@ func readExamples(reader io.Reader, examples chan<- example) {
 	// .
 	var stage int
 	var input, output []byte
+	nextNumber := 1
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 1 && line[0] == '.' {
@@ -76,7 +78,8 @@ func readExamples(reader io.Reader, examples chan<- example) {
 			case 1:
 				stage = 2
 			case 2:
-				examples <- example{replaceMagicChars(input), replaceMagicChars(output)}
+				examples <- example{nextNumber, replaceMagicChars(input), replaceMagicChars(output)}
+				nextNumber++
 				input = nil
 				output = nil
 				stage = 0
