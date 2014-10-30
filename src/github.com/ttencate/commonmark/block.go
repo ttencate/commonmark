@@ -121,7 +121,6 @@ func parseBlocks(data []byte) (*document, error) {
 		}
 
 		if openBlock.AcceptsLines() {
-
 			// We're good.
 		} else if indentation(line) >= 4 {
 			code := &indentedCodeBlock{}
@@ -129,6 +128,8 @@ func parseBlocks(data []byte) (*document, error) {
 			openBlocks = append(openBlocks, code)
 			openBlock = code
 			line = line[4:]
+		} else if blank {
+			continue
 		} else {
 			par := &paragraph{}
 			openBlock.AppendChild(par)
