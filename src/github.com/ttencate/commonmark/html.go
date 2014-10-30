@@ -13,14 +13,16 @@ func blockToHTML(b Block, out io.Writer) {
 		for _, child := range t.Children() {
 			blockToHTML(child, out)
 		}
-	case *paragraph:
-		io.WriteString(out, "<p>")
-		inlineToHTML(t.inlineContent, out)
-		io.WriteString(out, "</p>\n")
+	case *horizontalRule:
+		io.WriteString(out, "<hr />\n")
 	case *indentedCodeBlock:
 		io.WriteString(out, "<pre><code>")
 		writeEscaped(t.content, out)
 		io.WriteString(out, "</code></pre>\n")
+	case *paragraph:
+		io.WriteString(out, "<p>")
+		inlineToHTML(t.inlineContent, out)
+		io.WriteString(out, "</p>\n")
 	default:
 		log.Panicf("no HTML converter registered for Block type %T", b)
 	}

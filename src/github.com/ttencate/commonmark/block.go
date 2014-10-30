@@ -23,6 +23,9 @@ type Block interface {
 
 	// AcceptsLines returns whether blocks of this type can contain lines.
 	AcceptsLines() bool
+
+	// CanContain returns whether this block can contain the given block.
+	CanContain(Block) bool
 }
 
 // block implements the common part of the Block interface.
@@ -53,6 +56,44 @@ func (d *document) AcceptsLines() bool {
 	return false
 }
 
+func (d *document) CanContain(Block) bool {
+	return true
+}
+
+// horizontalRule is a horizontal rule.
+//
+// "A line consisting of 0-3 spaces of indentation, followed by a sequence of
+// three or more matching -, _, or * characters, each followed optionally by
+// any number of spaces, forms a horizontal rule."
+type horizontalRule struct {
+	block
+}
+
+func (r *horizontalRule) AcceptsLines() bool {
+	return false
+}
+
+func (r *horizontalRule) CanContain(Block) bool {
+	return false
+}
+
+// indentedCodeBlock represents an indented code block.
+//
+// "An indented code block is composed of one or more indented chunks separated
+// by blank lines. An indented chunk is a sequence of non-blank lines, each
+// indented four or more spaces."
+type indentedCodeBlock struct {
+	block
+}
+
+func (c *indentedCodeBlock) AcceptsLines() bool {
+	return true
+}
+
+func (c *indentedCodeBlock) CanContain(Block) bool {
+	return false
+}
+
 // paragraph represents a paragraph of text.
 //
 // "A sequence of non-blank lines that cannot be interpreted as other kinds of
@@ -69,19 +110,13 @@ func (p *paragraph) AcceptsLines() bool {
 	return true
 }
 
-// indentedCodeBlock represents an indented code block.
-//
-// "An indented code block is composed of one or more indented chunks separated
-// by blank lines. An indented chunk is a sequence of non-blank lines, each
-// indented four or more spaces."
-type indentedCodeBlock struct {
-	block
+func (p *paragraph) CanContain(Block) bool {
+	return false
 }
 
-func (c *indentedCodeBlock) AcceptsLines() bool {
-	return true
-}
-
+// parseBlocks performs the first parsing pass: turning the document into a
+// tree of blocks. Inline content is not parsed at this time. See:
+// http://spec.commonmark.org/0.7/#how-source-lines-alter-the-document-tree
 func parseBlocks(data []byte) (*document, error) {
 	scanner := newScanner(data)
 	doc := &document{}
@@ -91,9 +126,12 @@ func parseBlocks(data []byte) (*document, error) {
 		line = tabsToSpaces(line)
 		line = append(line, '\n')
 
+		// "The line is analyzed and, depending on its contents, the document
+		// may be altered in one or more of the following ways:"
 		indent := indentation(line)
 		blank := line[indent] == '\n'
 
+		// "1. One or more open blocks may be closed."
 		var openBlock Block
 		var i int
 		for i, openBlock = range openBlocks {
@@ -125,22 +163,29 @@ func parseBlocks(data []byte) (*document, error) {
 		openBlocks = openBlocks[:i+1]
 		openBlock = openBlocks[len(openBlocks)-1]
 
-		if openBlock.AcceptsLines() {
-			// We're good.
-		} else if indentation(line) >= 4 {
+		// "2. One or more new blocks may be created as children of the last open block."
+		if _, ok := openBlock.(*paragraph); !ok && indentation(line) >= 4 {
 			code := &indentedCodeBlock{}
 			openBlock.AppendChild(code)
 			openBlocks = append(openBlocks, code)
 			openBlock = code
 			line = line[4:]
+		} else if _, ok := openBlock.(*paragraph); ok {
+			// Fall through.
+		} else if isHorizontalRule(line) {
+			openBlock.AppendChild(&horizontalRule{})
+			continue
 		} else if blank {
 			continue
-		} else {
+		} else if !openBlock.AcceptsLines() {
 			par := &paragraph{}
 			openBlock.AppendChild(par)
 			openBlocks = append(openBlocks, par)
 			openBlock = par
 		}
+
+		// "3. Text may be added to the last (deepest) open block remaining on
+		// the tree."
 		assertf(openBlock.AcceptsLines(), "remaining types of block should all accept lines, but %T does not", openBlock)
 		openBlock.AppendLine(line)
 	}
@@ -160,6 +205,35 @@ func indentation(line []byte) int {
 	}
 	assertf(false, "indentation() expects line %q to end in newline character", line)
 	return 0
+}
+
+// isHorizontalRule returns whether the line contains a valid horizontal rule.
+func isHorizontalRule(line []byte) bool {
+	var char byte
+	var count int
+	for i, c := range line {
+		// "... each followed optionally by any number of spaces ..."
+		if c != ' ' && c != '\n' {
+			if c != '-' && c != '_' && c != '*' {
+				return false
+			}
+			// "... matching -, _, or * characters ..."
+			if char == 0 {
+				if i >= 4 {
+					// "A line consisting of 0-3 spaces of indentation ..."
+					return false
+				}
+				char = c
+				count = 1
+			} else if c == char {
+				count++
+			} else {
+				return false
+			}
+		}
+	}
+	// "... a sequence of three or more ..."
+	return count >= 3
 }
 
 func processInlines(b Block) {
