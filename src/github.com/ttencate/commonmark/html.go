@@ -23,6 +23,12 @@ func blockToHTML(b Block, out io.Writer) {
 		io.WriteString(out, "<p>")
 		inlineToHTML(t.inlineContent, out)
 		io.WriteString(out, "</p>\n")
+	case *blockQuote:
+		io.WriteString(out, "<blockquote>\n")
+		for _, child := range t.Children() {
+			blockToHTML(child, out)
+		}
+		io.WriteString(out, "</blockquote>\n")
 	default:
 		log.Panicf("no HTML converter registered for Block type %T", b)
 	}

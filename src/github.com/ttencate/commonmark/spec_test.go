@@ -42,7 +42,7 @@ func TestSpec(t *testing.T) {
 		actualOutput, err := ToHTMLBytes(ex.input)
 		if err != nil {
 			failed = true
-			t.Errorf("error in example %d: %s\ninput:\n%s", ex.number, err, ex.input)
+			t.Errorf("error in section \"%s\" example %d: %s\ninput:\n%s", ex.section, ex.number, err, ex.input)
 		} else if !bytes.Equal(actualOutput, ex.output) {
 			failed = true
 			t.Errorf("incorrect output in section \"%s\" example %d\ninput:\n%s\nexpected output:\n%s\nactual output:\n%s",

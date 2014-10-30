@@ -24,6 +24,10 @@ type Block interface {
 	// AcceptsLines returns whether blocks of this type can contain lines.
 	AcceptsLines() bool
 
+	// AcceptsLiteralLines returns whether blocks of this type accept literal
+	// lines, which aren't further scanned for subblocks.
+	AcceptsLiteralLines() bool
+
 	// CanContain returns whether this block can contain the given block.
 	CanContain(Block) bool
 }
@@ -45,6 +49,10 @@ func (b *block) AppendChild(child Block) {
 
 func (b *block) AppendLine(line []byte) {
 	b.content = append(b.content, line...)
+}
+
+func (b *block) AcceptsLiteralLines() bool {
+	return false
 }
 
 // document is the root node of the parse tree.
@@ -90,6 +98,10 @@ func (c *indentedCodeBlock) AcceptsLines() bool {
 	return true
 }
 
+func (c *indentedCodeBlock) AcceptsLiteralLines() bool {
+	return true
+}
+
 func (c *indentedCodeBlock) CanContain(Block) bool {
 	return false
 }
@@ -112,6 +124,20 @@ func (p *paragraph) AcceptsLines() bool {
 
 func (p *paragraph) CanContain(Block) bool {
 	return false
+}
+
+// blockQuote represents a block quote; roughly, a series of lines starting
+// with '>'.
+type blockQuote struct {
+	block
+}
+
+func (q *blockQuote) AcceptsLines() bool {
+	return false
+}
+
+func (q *blockQuote) CanContain(Block) bool {
+	return true
 }
 
 // parseBlocks performs the first parsing pass: turning the document into a
@@ -164,13 +190,14 @@ func (p *blockParser) parse(data []byte) error {
 
 		// "The line is analyzed and, depending on its contents, the document
 		// may be altered in one or more of the following ways:"
-		indent := indentation(line)
-		blank := line[indent] == '\n'
 
 		// "1. One or more open blocks may be closed."
 		var openBlock Block
 		var i int
 		for i, openBlock = range p.openBlocks {
+			indent := indentation(line)
+			blank := line[indent] == '\n'
+
 			allMatched := true
 			switch openBlock.(type) {
 			case *indentedCodeBlock:
@@ -187,7 +214,14 @@ func (p *blockParser) parse(data []byte) error {
 				if blank {
 					allMatched = false
 				}
-				break
+			case *blockQuote:
+				// "3. Consecutiveness. A document cannot contain two block
+				// quotes in a row unless there is a blank line between them."
+				if blank {
+					allMatched = false
+				} else if line[indent] == '>' {
+					line = stripBlockQuoteMarker(line)
+				}
 			}
 			if !allMatched {
 				assertf(i > 0, "allMatched should not become false at the document root")
@@ -201,28 +235,41 @@ func (p *blockParser) parse(data []byte) error {
 		}
 
 		// "2. One or more new blocks may be created as children of the last open block."
-		openBlock = p.openBlock()
-		if _, ok := openBlock.(*indentedCodeBlock); !ok {
+		for !p.openBlock().AcceptsLiteralLines() {
+			openBlock := p.openBlock()
 			if _, ok := openBlock.(*paragraph); !ok && indentation(line) >= 4 {
 				p.addChild(&indentedCodeBlock{})
 				line = line[4:]
-			} else if _, ok := openBlock.(*paragraph); ok {
-				// Fall through.
+			} else if line[indentation(line)] == '>' {
+				p.addChild(&blockQuote{})
+				line = stripBlockQuoteMarker(line)
 			} else if isHorizontalRule(line) {
 				p.addChild(&horizontalRule{})
 				p.closeLastBlock()
-				continue
-			} else if blank {
-				continue
+				line = nil
+				break
+			} else if isBlank(line) {
+				line = nil
+				break
 			} else if !openBlock.AcceptsLines() {
 				p.addChild(&paragraph{})
+			} else {
+				break
 			}
+
+			if p.openBlock().AcceptsLines() {
+				break
+			}
+		}
+
+		if line == nil {
+			continue
 		}
 
 		// "3. Text may be added to the last (deepest) open block remaining on
 		// the tree."
 		openBlock = p.openBlock()
-		assertf(openBlock.AcceptsLines(), "remaining types of block should all accept lines, but %T does not", openBlock)
+		assertf(openBlock.AcceptsLines(), "remaining types of block should all accept lines, but %T does not (line: %q)", openBlock, line)
 		openBlock.AppendLine(line)
 	}
 	if err := scanner.Err(); err != nil {
@@ -241,6 +288,16 @@ func indentation(line []byte) int {
 	}
 	assertf(false, "indentation() expects line %q to end in newline character", line)
 	return 0
+}
+
+// isBlank returns whether the line contains only spaces.
+func isBlank(line []byte) bool {
+	for i, c := range line {
+		if c != ' ' {
+			return i == len(line)-1
+		}
+	}
+	return true
 }
 
 // isHorizontalRule returns whether the line contains a valid horizontal rule.
@@ -270,6 +327,16 @@ func isHorizontalRule(line []byte) bool {
 	}
 	// "... a sequence of three or more ..."
 	return count >= 3
+}
+
+// stripBlockQuoteMarker removes any leading whitespace, the '>' character, and
+// optionally a space following that. It assumes that all of this is present.
+func stripBlockQuoteMarker(line []byte) []byte {
+	line = line[indentation(line)+1:]
+	if line[0] == ' ' {
+		line = line[1:]
+	}
+	return line
 }
 
 func assertf(condition bool, format string, args ...interface{}) {
