@@ -115,12 +115,28 @@ func (p *paragraph) CanContain(Block) bool {
 }
 
 // parseBlocks performs the first parsing pass: turning the document into a
-// tree of blocks. Inline content is not parsed at this time. See:
-// http://spec.commonmark.org/0.7/#how-source-lines-alter-the-document-tree
+// tree of blocks. Inline content is not parsed at this time.
 func parseBlocks(data []byte) (*document, error) {
-	scanner := newScanner(data)
 	doc := &document{}
-	openBlocks := []Block{doc}
+	parser := blockParser{
+		doc:        doc,
+		openBlocks: []Block{doc},
+	}
+	if err := parser.parse(data); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+type blockParser struct {
+	doc        *document
+	openBlocks []Block
+}
+
+func (p *blockParser) parse(data []byte) error {
+	// See:
+	// http://spec.commonmark.org/0.7/#how-source-lines-alter-the-document-tree
+	scanner := newScanner(data)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		line = tabsToSpaces(line)
@@ -134,7 +150,7 @@ func parseBlocks(data []byte) (*document, error) {
 		// "1. One or more open blocks may be closed."
 		var openBlock Block
 		var i int
-		for i, openBlock = range openBlocks {
+		for i, openBlock = range p.openBlocks {
 			allMatched := true
 			switch openBlock.(type) {
 			case *indentedCodeBlock:
@@ -160,14 +176,14 @@ func parseBlocks(data []byte) (*document, error) {
 			}
 		}
 
-		openBlocks = openBlocks[:i+1]
-		openBlock = openBlocks[len(openBlocks)-1]
+		p.openBlocks = p.openBlocks[:i+1]
+		openBlock = p.openBlocks[len(p.openBlocks)-1]
 
 		// "2. One or more new blocks may be created as children of the last open block."
 		if _, ok := openBlock.(*paragraph); !ok && indentation(line) >= 4 {
 			code := &indentedCodeBlock{}
 			openBlock.AppendChild(code)
-			openBlocks = append(openBlocks, code)
+			p.openBlocks = append(p.openBlocks, code)
 			openBlock = code
 			line = line[4:]
 		} else if _, ok := openBlock.(*paragraph); ok {
@@ -180,7 +196,7 @@ func parseBlocks(data []byte) (*document, error) {
 		} else if !openBlock.AcceptsLines() {
 			par := &paragraph{}
 			openBlock.AppendChild(par)
-			openBlocks = append(openBlocks, par)
+			p.openBlocks = append(p.openBlocks, par)
 			openBlock = par
 		}
 
@@ -190,9 +206,9 @@ func parseBlocks(data []byte) (*document, error) {
 		openBlock.AppendLine(line)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return err
 	}
-	return doc, nil
+	return nil
 }
 
 // indentation returns the index of the first non-space. If the line consists
@@ -234,19 +250,6 @@ func isHorizontalRule(line []byte) bool {
 	}
 	// "... a sequence of three or more ..."
 	return count >= 3
-}
-
-func processInlines(b Block) {
-	switch t := b.(type) {
-	case *paragraph:
-		// "Final spaces are stripped before inline parsing, so a paragraph that
-		// ends with two or more spaces will not end with a hard line break."
-		t.inlineContent = parseInlines(bytes.TrimRight(t.content, " "))
-	}
-
-	for _, child := range b.Children() {
-		processInlines(child)
-	}
 }
 
 func assertf(condition bool, format string, args ...interface{}) {

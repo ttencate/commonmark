@@ -30,15 +30,36 @@ func ToHTMLBytes(data []byte) ([]byte, error) {
 
 func parse(data []byte) (*document, error) {
 	// See http://spec.commonmark.org/0.7/#appendix-a-a-parsing-strategy
+	// "Parsing has two phases:"
 
-	// Phase one: construct a tree of blocks, and store reference definitions.
+	// "In the first phase, lines of input are consumed and the block structure
+	// of the document—its division into paragraphs, block quotes, list items,
+	// and so on—is constructed. Text is assigned to these blocks but not
+	// parsed. Link reference definitions are parsed and a map of links is
+	// constructed."
 	doc, err := parseBlocks(data)
 	if err != nil {
 		return nil, err
 	}
 
-	// Phase two: process inlines.
+	// "In the second phase, the raw text contents of paragraphs and headers
+	// are parsed into sequences of Markdown inline elements (strings, code
+	// spans, links, emphasis, and so on), using the map of link references
+	// constructed in phase 1."
 	processInlines(doc)
 
 	return doc, nil
+}
+
+func processInlines(b Block) {
+	switch t := b.(type) {
+	case *paragraph:
+		// "Final spaces are stripped before inline parsing, so a paragraph that
+		// ends with two or more spaces will not end with a hard line break."
+		t.inlineContent = parseInlines(bytes.TrimRight(t.content, " "))
+	}
+
+	for _, child := range b.Children() {
+		processInlines(child)
+	}
 }
