@@ -3,6 +3,7 @@ package commonmark
 import (
 	"bytes"
 	"log"
+	"regexp"
 )
 
 // Block represents a node in the parse tree.
@@ -17,6 +18,9 @@ type Block interface {
 
 	// AppendChild appends a child block to the list of children.
 	AppendChild(Block)
+
+	// ReplaceLastChild replaces the last child block with the given one.
+	ReplaceLastChild(Block)
 
 	// AppendLine appends the given line to the list of lines.
 	AppendLine([]byte)
@@ -45,6 +49,10 @@ func (b *block) Children() []Block {
 
 func (b *block) AppendChild(child Block) {
 	b.children = append(b.children, child)
+}
+
+func (b *block) ReplaceLastChild(child Block) {
+	b.children[len(b.children)-1] = child
 }
 
 func (b *block) AppendLine(line []byte) {
@@ -173,6 +181,12 @@ func (p *blockParser) openBlock() Block {
 	return p.openBlocks[len(p.openBlocks)-1]
 }
 
+func (p *blockParser) replaceOpenBlock(b Block) {
+	assertf(len(p.openBlocks) > 1, "cannot replace document root")
+	p.openBlocks[len(p.openBlocks)-2].ReplaceLastChild(b)
+	p.openBlocks[len(p.openBlocks)-1] = b
+}
+
 func (p *blockParser) parse(data []byte) error {
 	// See:
 	// http://spec.commonmark.org/0.7/#how-source-lines-alter-the-document-tree
@@ -231,7 +245,8 @@ func (p *blockParser) parse(data []byte) error {
 		// "2. One or more new blocks may be created as children of the last open block."
 		for !p.openBlock().AcceptsLiteralLines() {
 			openBlock := p.openBlock()
-			if _, ok := openBlock.(*paragraph); !ok && indentation(line) >= 4 {
+			par, isParagraph := openBlock.(*paragraph)
+			if !isParagraph && indentation(line) >= 4 {
 				p.addChild(&indentedCodeBlock{})
 				line = line[4:]
 			} else if line[indentation(line)] == '>' {
@@ -239,6 +254,11 @@ func (p *blockParser) parse(data []byte) error {
 				line = stripBlockQuoteMarker(line)
 			} else if level, content := parseATXHeader(line); level > 0 {
 				p.addChild(&atxHeader{level: level, block: block{content: content}})
+				p.closeLastBlock()
+				line = nil
+				break
+			} else if level := parseSetextUnderline(line); isParagraph && level > 0 && hasOneLine(par.content) {
+				p.replaceOpenBlock(&atxHeader{level: level, block: block{content: par.content}})
 				p.closeLastBlock()
 				line = nil
 				break
@@ -332,6 +352,7 @@ func isHorizontalRule(line []byte) bool {
 // valid ATX header. The second return value is the raw content of the header,
 // stripped of leading and trailing space.
 func parseATXHeader(line []byte) (int, []byte) {
+	// TODO replace by regexp
 	// "The opening # character may be indented 0-3 spaces."
 	indent := indentation(line)
 	if indent > 3 {
@@ -379,6 +400,41 @@ func parseATXHeader(line []byte) (int, []byte) {
 	line = bytes.Trim(line, " ")
 
 	return level, line
+}
+
+var setextUnderlineRe = regexp.MustCompile(`^ {0,3}(=+|-+) *\n$`)
+
+// parseSetextUnderline recognizes a setext header underline and returns its
+// level, 1-2. It returns -1 if the given line is not a setext underline.
+func parseSetextUnderline(line []byte) int {
+	m := setextUnderlineRe.FindSubmatch(line)
+	if m != nil {
+		switch m[1][0] {
+		case '=':
+			return 1
+		case '-':
+			return 2
+		default:
+			assertf(false, "unexpected setext line character '%s'", m[1][0])
+		}
+	}
+	return -1
+}
+
+// hasOneLine returns whether the data contains exactly one line. It must be
+// nonempty, and may contain at most one newline character, which must be last.
+func hasOneLine(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	// Skip the last character. If newline, fine, mustn't find another. If not
+	// newline, we mustn't find one elsewhere either.
+	for i := len(data) - 2; i >= 0; i-- {
+		if data[i] == '\n' {
+			return false
+		}
+	}
+	return true
 }
 
 // stripBlockQuoteMarker removes any leading whitespace, the '>' character, and
