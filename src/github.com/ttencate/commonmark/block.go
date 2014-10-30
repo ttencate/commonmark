@@ -91,14 +91,21 @@ func parseBlocks(data []byte) (*document, error) {
 		line = tabsToSpaces(line)
 		line = append(line, '\n')
 
+		indent := indentation(line)
+		blank := line[indent] == '\n'
+
 		var openBlock Block
 		var i int
 		for i, openBlock = range openBlocks {
 			allMatched := true
 			switch openBlock.(type) {
 			case *indentedCodeBlock:
-				if indentation(line) >= 4 {
-					line = line[4:]
+				if indent >= 4 || blank {
+					if len(line) > 4 {
+						line = line[4:]
+					} else {
+						line = line[len(line)-1:]
+					}
 				} else {
 					allMatched = false
 				}
@@ -114,6 +121,7 @@ func parseBlocks(data []byte) (*document, error) {
 		}
 
 		if openBlock.AcceptsLines() {
+
 			// We're good.
 		} else if indentation(line) >= 4 {
 			code := &indentedCodeBlock{}
@@ -146,12 +154,6 @@ func indentation(line []byte) int {
 	}
 	assertf(false, "indentation() expects line %q to end in newline character", line)
 	return 0
-}
-
-// isBlank returns true if the line consists only of space characters before
-// the newline.
-func isBlank(line []byte) bool {
-	return line[indentation(line)] == '\n'
 }
 
 func processInlines(b Block) {
