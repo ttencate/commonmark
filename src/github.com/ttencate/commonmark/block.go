@@ -4,66 +4,66 @@ import (
 	"bytes"
 )
 
-// Block represents a node in the parse tree. It can either be a ContainerBlock
-// or a LeafBlock.
+// Block represents a node in the parse tree.
+//
+// "We can think of a document as a sequence of blocks—structural elements like
+// paragraphs, block quotations, lists, headers, rules, and code blocks. Blocks
+// can contain other blocks, or they can contain inline content: words, spaces,
+// links, emphasized text, images, and inline code."
 type Block interface {
-}
-
-// ContainerBlock represents a block that can contain other blocks.
-type ContainerBlock interface {
-	Block
-
 	// Children returns the list of child blocks, in order.
 	Children() []Block
 
 	// AppendChild appends a child block to the list of children.
 	AppendChild(Block)
-}
-
-// LeafBlock represents a block that cannot contain other blocks.
-type LeafBlock interface {
-	Block
 
 	// AppendLine appends the given line to the list of lines.
 	AppendLine([]byte)
+
+	// AcceptsLines returns whether blocks of this type can contain lines.
+	AcceptsLines() bool
 }
 
-// simpleContainer implements the ContainerBlock interface in the naive way.
-type simpleContainer struct {
-	children []Block
-}
-
-func (c *simpleContainer) Children() []Block {
-	return c.children
-}
-
-func (c *simpleContainer) AppendChild(b Block) {
-	c.children = append(c.children, b)
-}
-
-// simpleLeaf implements the LeafBlock interface in the naive way.
-type simpleLeaf struct {
+// block implements the common part of the Block interface.
+type block struct {
+	children      []Block
 	content       []byte
 	inlineContent Inline
 }
 
-func (l *simpleLeaf) AppendLine(line []byte) {
-	l.content = append(l.content, line...)
+func (b *block) Children() []Block {
+	return b.children
+}
+
+func (b *block) AppendChild(child Block) {
+	b.children = append(b.children, child)
+}
+
+func (b *block) AppendLine(line []byte) {
+	b.content = append(b.content, line...)
 }
 
 // document is the root node of the parse tree.
 type document struct {
-	simpleContainer
+	block
+}
+
+func (d *document) AcceptsLines() bool {
+	return false
 }
 
 // paragraph represents a paragraph: a sequence of non-blank lines that cannot
 // be interpreted as other kinds of blocks.
 type paragraph struct {
-	simpleLeaf
+	block
 }
 
 func (p *paragraph) AppendLine(line []byte) {
-	p.simpleLeaf.AppendLine(bytes.TrimLeft(line, " "))
+	p.block.AppendLine(bytes.TrimLeft(line, " "))
+}
+
+func (p *paragraph) AcceptsLines() bool {
+	return true
 }
 
 func parseBlocks(data []byte) (*document, error) {
@@ -77,19 +77,20 @@ func parseBlocks(data []byte) (*document, error) {
 
 		var openBlock Block
 		for _, openBlock = range openBlocks {
-			if _, ok := openBlock.(LeafBlock); ok {
+			switch openBlock.(type) {
+			case *paragraph:
 				break
 			}
 		}
 
-		leafBlock, ok := openBlock.(LeafBlock)
-		if !ok {
-			containerBlock := openBlock.(ContainerBlock)
-			leafBlock = &paragraph{}
-			containerBlock.AppendChild(leafBlock)
-			openBlocks = append(openBlocks, leafBlock)
+		if openBlock.AcceptsLines() {
+			openBlock.AppendLine(line)
+		} else {
+			par := &paragraph{}
+			par.AppendLine(line)
+			openBlock.AppendChild(par)
+			openBlocks = append(openBlocks, par)
 		}
-		leafBlock.AppendLine(line)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
@@ -105,9 +106,7 @@ func processInlines(b Block) {
 		t.inlineContent = parseInlines(bytes.TrimRight(t.content, " "))
 	}
 
-	if container, ok := b.(ContainerBlock); ok {
-		for _, child := range container.Children() {
-			processInlines(child)
-		}
+	for _, child := range b.Children() {
+		processInlines(child)
 	}
 }
