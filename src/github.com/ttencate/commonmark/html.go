@@ -17,6 +17,10 @@ func blockToHTML(b Block, out io.Writer) {
 		io.WriteString(out, "<p>")
 		inlineToHTML(t.inlineContent, out)
 		io.WriteString(out, "</p>\n")
+	case *indentedCodeBlock:
+		io.WriteString(out, "<pre><code>")
+		out.Write(t.content)
+		io.WriteString(out, "</code></pre>\n")
 	default:
 		log.Panicf("no HTML converter registered for Block type %T", b)
 	}

@@ -2,6 +2,7 @@ package commonmark
 
 import (
 	"bytes"
+	"log"
 )
 
 // Block represents a node in the parse tree.
@@ -52,8 +53,10 @@ func (d *document) AcceptsLines() bool {
 	return false
 }
 
-// paragraph represents a paragraph: a sequence of non-blank lines that cannot
-// be interpreted as other kinds of blocks.
+// paragraph represents a paragraph of text.
+//
+// "A sequence of non-blank lines that cannot be interpreted as other kinds of
+// blocks forms a paragraph."
 type paragraph struct {
 	block
 }
@@ -63,6 +66,19 @@ func (p *paragraph) AppendLine(line []byte) {
 }
 
 func (p *paragraph) AcceptsLines() bool {
+	return true
+}
+
+// indentedCodeBlock represents an indented code block.
+//
+// "An indented code block is composed of one or more indented chunks separated
+// by blank lines. An indented chunk is a sequence of non-blank lines, each
+// indented four or more spaces."
+type indentedCodeBlock struct {
+	block
+}
+
+func (c *indentedCodeBlock) AcceptsLines() bool {
 	return true
 }
 
@@ -76,26 +92,66 @@ func parseBlocks(data []byte) (*document, error) {
 		line = append(line, '\n')
 
 		var openBlock Block
-		for _, openBlock = range openBlocks {
+		var i int
+		for i, openBlock = range openBlocks {
+			allMatched := true
 			switch openBlock.(type) {
+			case *indentedCodeBlock:
+				if indentation(line) >= 4 {
+					line = line[4:]
+				} else {
+					allMatched = false
+				}
 			case *paragraph:
+				// TODO close paragraph on blank line
+				break
+			}
+			if !allMatched {
+				assertf(i > 0, "allMatched should not become false at the document root")
+				openBlock = openBlocks[i-1]
 				break
 			}
 		}
 
 		if openBlock.AcceptsLines() {
-			openBlock.AppendLine(line)
+			// We're good.
+		} else if indentation(line) >= 4 {
+			code := &indentedCodeBlock{}
+			openBlock.AppendChild(code)
+			openBlocks = append(openBlocks, code)
+			openBlock = code
+			line = line[4:]
 		} else {
 			par := &paragraph{}
-			par.AppendLine(line)
 			openBlock.AppendChild(par)
 			openBlocks = append(openBlocks, par)
+			openBlock = par
 		}
+		assertf(openBlock.AcceptsLines(), "remaining types of block should all accept lines, but %T does not", openBlock)
+		openBlock.AppendLine(line)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 	return doc, nil
+}
+
+// indentation returns the index of the first non-space. If the line consists
+// entirely of spaces, it returns the index of the newline character.
+func indentation(line []byte) int {
+	for i, c := range line {
+		if c != ' ' {
+			return i
+		}
+	}
+	assertf(false, "indentation() expects line %q to end in newline character", line)
+	return 0
+}
+
+// isBlank returns true if the line consists only of space characters before
+// the newline.
+func isBlank(line []byte) bool {
+	return line[indentation(line)] == '\n'
 }
 
 func processInlines(b Block) {
@@ -108,5 +164,11 @@ func processInlines(b Block) {
 
 	for _, child := range b.Children() {
 		processInlines(child)
+	}
+}
+
+func assertf(condition bool, format string, args ...interface{}) {
+	if !condition {
+		log.Panicf(format, args...)
 	}
 }
