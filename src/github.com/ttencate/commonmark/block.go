@@ -51,17 +51,21 @@ func (b *block) AppendLine(line []byte) {
 	b.content = append(b.content, line...)
 }
 
+func (b *block) AcceptsLines() bool {
+	return false
+}
+
 func (b *block) AcceptsLiteralLines() bool {
+	return false
+}
+
+func (b *block) CanContain(Block) bool {
 	return false
 }
 
 // document is the root node of the parse tree.
 type document struct {
 	block
-}
-
-func (d *document) AcceptsLines() bool {
-	return false
 }
 
 func (d *document) CanContain(Block) bool {
@@ -77,12 +81,14 @@ type horizontalRule struct {
 	block
 }
 
-func (r *horizontalRule) AcceptsLines() bool {
-	return false
-}
-
-func (r *horizontalRule) CanContain(Block) bool {
-	return false
+// atxHeader is a header marked with # characters.
+//
+// "An ATX header consists of a string of characters, parsed as inline content,
+// between an opening sequence of 1–6 unescaped # characters and an optional
+// closing sequence of any number of # characters."
+type atxHeader struct {
+	block
+	level int
 }
 
 // indentedCodeBlock represents an indented code block.
@@ -102,10 +108,6 @@ func (c *indentedCodeBlock) AcceptsLiteralLines() bool {
 	return true
 }
 
-func (c *indentedCodeBlock) CanContain(Block) bool {
-	return false
-}
-
 // paragraph represents a paragraph of text.
 //
 // "A sequence of non-blank lines that cannot be interpreted as other kinds of
@@ -122,18 +124,10 @@ func (p *paragraph) AcceptsLines() bool {
 	return true
 }
 
-func (p *paragraph) CanContain(Block) bool {
-	return false
-}
-
 // blockQuote represents a block quote; roughly, a series of lines starting
 // with '>'.
 type blockQuote struct {
 	block
-}
-
-func (q *blockQuote) AcceptsLines() bool {
-	return false
 }
 
 func (q *blockQuote) CanContain(Block) bool {
@@ -243,6 +237,11 @@ func (p *blockParser) parse(data []byte) error {
 			} else if line[indentation(line)] == '>' {
 				p.addChild(&blockQuote{})
 				line = stripBlockQuoteMarker(line)
+			} else if level, content := parseATXHeader(line); level > 0 {
+				p.addChild(&atxHeader{level: level, block: block{content: content}})
+				p.closeLastBlock()
+				line = nil
+				break
 			} else if isHorizontalRule(line) {
 				p.addChild(&horizontalRule{})
 				p.closeLastBlock()
@@ -327,6 +326,59 @@ func isHorizontalRule(line []byte) bool {
 	}
 	// "... a sequence of three or more ..."
 	return count >= 3
+}
+
+// Returns the level of the ATX header, 1-6, or -1 if the given line is not a
+// valid ATX header. The second return value is the raw content of the header,
+// stripped of leading and trailing space.
+func parseATXHeader(line []byte) (int, []byte) {
+	// "The opening # character may be indented 0-3 spaces."
+	indent := indentation(line)
+	if indent > 3 {
+		return -1, nil
+	}
+	line = line[indent:]
+
+	// "The header level is equal to the number of # characters in the opening
+	// sequence."
+	var level int
+	for i, c := range line {
+		if c != '#' {
+			level = i
+			break
+		}
+	}
+	if level < 1 || level > 6 {
+		return -1, nil
+	}
+	line = line[level:]
+	// "The opening sequence of # characters cannot be followed directly by a
+	// nonspace character."
+	if line[0] != ' ' && line[0] != '\n' {
+		return -1, nil
+	}
+
+	// "The optional closing sequence of #s [...] may be followed by spaces
+	// only."
+	trailerStart := len(line) - 1
+	for trailerStart > 0 && line[trailerStart-1] == ' ' {
+		trailerStart--
+	}
+	for trailerStart > 0 && line[trailerStart-1] == '#' {
+		trailerStart--
+	}
+	// "The optional closing sequence of #s must be preceded by a space [...]."
+	// Note that (if the header is empty) this may be the same space as after
+	// the opening sequence.
+	if trailerStart > 0 && line[trailerStart-1] == ' ' {
+		line = line[:trailerStart]
+	}
+
+	// "The raw contents of the header are stripped of leading and trailing
+	// spaces before being parsed as inline content."
+	line = bytes.Trim(line, " ")
+
+	return level, line
 }
 
 // stripBlockQuoteMarker removes any leading whitespace, the '>' character, and

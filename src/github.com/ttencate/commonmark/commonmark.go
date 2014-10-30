@@ -53,6 +53,8 @@ func parse(data []byte) (*document, error) {
 
 func processInlines(b Block) {
 	switch t := b.(type) {
+	case *atxHeader:
+		t.inlineContent = parseInlines(t.content)
 	case *paragraph:
 		// "Final spaces are stripped before inline parsing, so a paragraph that
 		// ends with two or more spaces will not end with a hard line break."

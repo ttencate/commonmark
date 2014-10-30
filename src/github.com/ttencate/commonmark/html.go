@@ -1,6 +1,7 @@
 package commonmark
 
 import (
+	"fmt"
 	"io"
 	"log"
 )
@@ -15,6 +16,10 @@ func blockToHTML(b Block, out io.Writer) {
 		}
 	case *horizontalRule:
 		io.WriteString(out, "<hr />\n")
+	case *atxHeader:
+		fmt.Fprintf(out, "<h%d>", t.level)
+		inlineToHTML(t.inlineContent, out)
+		fmt.Fprintf(out, "</h%d>\n", t.level)
 	case *indentedCodeBlock:
 		io.WriteString(out, "<pre><code>")
 		writeEscaped(t.content, out)
