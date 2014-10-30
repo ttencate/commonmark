@@ -60,12 +60,14 @@ func tabsToSpaces(line []byte) []byte {
 	var runeCount int
 	for _, c := range string(line) {
 		if c == '\t' {
-			spaces := bytes.Repeat([]byte{' '}, tabStop-runeCount%tabStop)
+			numSpaces := tabStop - runeCount%tabStop
+			spaces := bytes.Repeat([]byte{' '}, numSpaces)
 			output = append(output, spaces...)
+			runeCount += numSpaces
 		} else {
 			output = append(output, []byte(fmt.Sprintf("%c", c))...)
+			runeCount++
 		}
-		runeCount++
 	}
 	return output
 }
