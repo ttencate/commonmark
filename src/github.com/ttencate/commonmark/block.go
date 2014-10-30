@@ -110,15 +110,20 @@ func parseBlocks(data []byte) (*document, error) {
 					allMatched = false
 				}
 			case *paragraph:
-				// TODO close paragraph on blank line
+				if blank {
+					allMatched = false
+				}
 				break
 			}
 			if !allMatched {
 				assertf(i > 0, "allMatched should not become false at the document root")
-				openBlock = openBlocks[i-1]
+				i--
 				break
 			}
 		}
+
+		openBlocks = openBlocks[:i+1]
+		openBlock = openBlocks[len(openBlocks)-1]
 
 		if openBlock.AcceptsLines() {
 			// We're good.
