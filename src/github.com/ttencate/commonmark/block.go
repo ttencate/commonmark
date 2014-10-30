@@ -133,6 +133,26 @@ type blockParser struct {
 	openBlocks []Block
 }
 
+func (p *blockParser) addChild(child Block) {
+	for i := len(p.openBlocks) - 1; i >= 0; i-- {
+		if p.openBlocks[i].CanContain(child) {
+			p.openBlocks[i].AppendChild(child)
+			p.openBlocks = append(p.openBlocks, child)
+			return
+		} else {
+			p.closeLastBlock()
+		}
+	}
+}
+
+func (p *blockParser) closeLastBlock() {
+	p.openBlocks = p.openBlocks[:len(p.openBlocks)-1]
+}
+
+func (p *blockParser) openBlock() Block {
+	return p.openBlocks[len(p.openBlocks)-1]
+}
+
 func (p *blockParser) parse(data []byte) error {
 	// See:
 	// http://spec.commonmark.org/0.7/#how-source-lines-alter-the-document-tree
@@ -176,32 +196,32 @@ func (p *blockParser) parse(data []byte) error {
 			}
 		}
 
-		p.openBlocks = p.openBlocks[:i+1]
-		openBlock = p.openBlocks[len(p.openBlocks)-1]
+		for len(p.openBlocks) > i+1 {
+			p.closeLastBlock()
+		}
 
 		// "2. One or more new blocks may be created as children of the last open block."
-		if _, ok := openBlock.(*paragraph); !ok && indentation(line) >= 4 {
-			code := &indentedCodeBlock{}
-			openBlock.AppendChild(code)
-			p.openBlocks = append(p.openBlocks, code)
-			openBlock = code
-			line = line[4:]
-		} else if _, ok := openBlock.(*paragraph); ok {
-			// Fall through.
-		} else if isHorizontalRule(line) {
-			openBlock.AppendChild(&horizontalRule{})
-			continue
-		} else if blank {
-			continue
-		} else if !openBlock.AcceptsLines() {
-			par := &paragraph{}
-			openBlock.AppendChild(par)
-			p.openBlocks = append(p.openBlocks, par)
-			openBlock = par
+		openBlock = p.openBlock()
+		if _, ok := openBlock.(*indentedCodeBlock); !ok {
+			if _, ok := openBlock.(*paragraph); !ok && indentation(line) >= 4 {
+				p.addChild(&indentedCodeBlock{})
+				line = line[4:]
+			} else if _, ok := openBlock.(*paragraph); ok {
+				// Fall through.
+			} else if isHorizontalRule(line) {
+				p.addChild(&horizontalRule{})
+				p.closeLastBlock()
+				continue
+			} else if blank {
+				continue
+			} else if !openBlock.AcceptsLines() {
+				p.addChild(&paragraph{})
+			}
 		}
 
 		// "3. Text may be added to the last (deepest) open block remaining on
 		// the tree."
+		openBlock = p.openBlock()
 		assertf(openBlock.AcceptsLines(), "remaining types of block should all accept lines, but %T does not", openBlock)
 		openBlock.AppendLine(line)
 	}
