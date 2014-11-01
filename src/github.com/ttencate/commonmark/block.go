@@ -54,33 +54,19 @@ func (p *blockParser) processParagraphs(n *Node) {
 	// result of parsing the paragraph’s raw content as inlines. The
 	// paragraph’s raw content is formed by concatenating the lines and
 	// removing initial and final spaces."
-	assembleParagraph := func(from, to *Node) {
-		par := &Paragraph{}
-		from.InsertBefore(NewNode(par))
-		n := from
-		for {
-			par.Content = append(par.Content, n.Content().(*RawLine).Content...)
-			n = removeAndNext(n)
-			if n == to {
-				break
+	var par *Paragraph
+	for child := n.FirstChild(); child != nil; {
+		if rawLine, ok := child.Content().(*RawLine); ok {
+			if par == nil {
+				par = &Paragraph{}
+				child.InsertBefore(NewNode(par))
 			}
-		}
-	}
-	var first *Node
-	for child := n.FirstChild(); child != nil; child = child.Next() {
-		if _, ok := child.Content().(*RawLine); ok {
-			if first == nil {
-				first = child
-			}
+			par.Content = append(par.Content, rawLine.Content...)
+			child = removeAndNext(child)
 		} else {
-			if first != nil {
-				assembleParagraph(first, child)
-				first = nil
-			}
+			par = nil
+			child = child.Next()
 		}
-	}
-	if first != nil {
-		assembleParagraph(first, nil)
 	}
 }
 
