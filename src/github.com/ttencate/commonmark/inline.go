@@ -22,16 +22,16 @@ type codeSpan struct {
 	content []byte
 }
 
-type multipleInline struct {
-	children []Inline
+type emphasis struct {
+	multipleInline
 }
 
-type inlineParser struct {
-	data        []byte
-	pos         int
-	stringStart int
+type strong struct {
+	multipleInline
+}
 
-	root *multipleInline
+type multipleInline struct {
+	children []Inline
 }
 
 func parseInlines(data []byte) Inline {
@@ -48,10 +48,137 @@ func parseInlines(data []byte) Inline {
 	return parser.root
 }
 
+type inlineParser struct {
+	data        []byte
+	pos         int
+	stringStart int
+
+	emphasisOpeners []*emphasisOpener
+
+	root *multipleInline
+}
+
+type emphasisOpener struct {
+	delimChar   byte
+	delimCount  int
+	firstInline []byte
+}
+
+// cur returns the byte the parser is currently at. Returns the NULL byte if we
+// are at the end.
+func (p *inlineParser) cur() byte {
+	if p.pos >= len(p.data) {
+		return 0
+	}
+	return p.data[p.pos]
+}
+
+func (p *inlineParser) hasNext() bool {
+	return p.pos < len(p.data)-1
+}
+
+func (p *inlineParser) handleStrongEmph() Inline {
+	// Remember what came before this run.
+	var charBefore byte = '\n'
+	if p.pos > 0 {
+		charBefore = p.data[p.pos-1]
+	}
+
+	// Count how many *s or _s in the current run.
+	var numDelims int
+	delimChar := p.cur()
+	for p.cur() == delimChar {
+		p.pos++
+		numDelims++
+	}
+
+	// Remember what came after this run.
+	charAfter := p.cur()
+
+	// Determine whether this run can open and/or close emphasis or strong emphasis.
+	canOpen := numDelims <= 3 && !isASCIISpace(charAfter)
+	canClose := numDelims <= 3 && !isASCIISpace(charBefore)
+	if delimChar == '_' {
+		canOpen = canOpen && !isASCIIAlNum(charBefore)
+		canClose = canClose && !isASCIIAlNum(charAfter)
+	}
+
+	if canClose {
+		// Walk the stack and find a matching opener, if there is one.
+		var stackPos int
+		var opener *emphasisOpener
+		for stackPos = len(p.emphasisOpeners) - 1; stackPos >= 0; stackPos-- {
+			opener = p.emphasisOpeners[stackPos]
+			if opener.delimChar == delimChar {
+				break
+			}
+		}
+		if stackPos < 0 {
+			goto cannotClose
+		}
+
+		// Calculate the actual number of delimiters used from this closer.
+		useDelims := opener.delimCount
+		if useDelims == 3 {
+			if numDelims == 3 {
+				useDelims = 1
+			} else {
+				useDelims = numDelims
+			}
+		} else if useDelims > numDelims {
+			useDelims = 1
+		}
+
+		if opener.delimCount == useDelims {
+			// The opener is completely used up.
+			switch useDelims {
+			case 1:
+				return &emphasis{multipleInline: multipleInline{children: []Inline{&stringInline{[]byte("hello em")}}}}
+			case 2:
+				return &strong{multipleInline: multipleInline{children: []Inline{&stringInline{[]byte("hello strong")}}}}
+			}
+
+			// Remove this opener and all later ones from stack.
+			p.emphasisOpeners = p.emphasisOpeners[:stackPos]
+		} else {
+			// The opener will only partially be used - stack entry remains
+			// (truncated) and a new inline is added.
+			opener.delimCount -= useDelims
+			opener.firstInline = opener.firstInline[:opener.delimCount]
+
+			switch useDelims {
+			case 1:
+				return &emphasis{multipleInline: multipleInline{children: []Inline{&stringInline{[]byte("hello em")}}}}
+			case 2:
+				return &strong{multipleInline: multipleInline{children: []Inline{&stringInline{[]byte("hello strong")}}}}
+			}
+		}
+
+		// If the closer was not fully used, move back a char or two and try
+		// again.
+		if useDelims < numDelims {
+			p.pos += useDelims - numDelims
+			return p.handleStrongEmph()
+		}
+
+		return nil
+	}
+cannotClose:
+	// TODO stack depth limit
+	if canOpen {
+		p.emphasisOpeners = append(p.emphasisOpeners, &emphasisOpener{
+			delimChar:   delimChar,
+			delimCount:  numDelims,
+			firstInline: p.data[p.pos-numDelims : p.pos],
+		})
+	}
+	return &stringInline{p.data[p.pos-numDelims : p.pos]}
+}
+
 func (p *inlineParser) parse() {
 	for p.pos < len(p.data) {
 		var inline Inline
-		switch p.data[p.pos] {
+		switch p.cur() {
 		case '\n':
 			hardBreak := false
 			newlinePos := p.pos
@@ -82,7 +209,7 @@ func (p *inlineParser) parse() {
 
 			p.pos = newlinePos + 1
 			// "Spaces at [...] the beginning of the next line are removed."
-			for p.pos < len(p.data) && p.data[p.pos] == ' ' {
+			for p.pos < len(p.data) && p.cur() == ' ' {
 				p.pos++
 			}
 			p.resetString()
@@ -109,6 +236,8 @@ func (p *inlineParser) parse() {
 			inline = &codeSpan{content}
 			p.pos = closing + numBackticks
 			p.resetString()
+		case '*', '_':
+			inline = p.handleStrongEmph()
 		case '\\':
 			// "Backslashes before other characters are treated as literal backslashes."
 			if p.pos+1 >= len(p.data) || !isASCIIPunct(p.data[p.pos+1]) {
@@ -188,6 +317,18 @@ var asciiPunct = []byte("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
 
 func isASCIIPunct(char byte) bool {
 	return bytes.IndexByte(asciiPunct, char) >= 0
+}
+
+var asciiSpace = []byte(" \n\r\t\f\v")
+
+func isASCIISpace(char byte) bool {
+	return bytes.IndexByte(asciiSpace, char) >= 0
+}
+
+func isASCIIAlNum(char byte) bool {
+	return (char >= 'a' && char <= 'z' ||
+		char >= 'A' && char <= 'Z' ||
+		char >= '0' && char <= '9')
 }
 
 func backtickStringIndex(data []byte, start, length int) int {

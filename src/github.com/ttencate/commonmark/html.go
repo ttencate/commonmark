@@ -55,6 +55,18 @@ func inlineToHTML(i Inline, out io.Writer) {
 		io.WriteString(out, "<code>")
 		writeEscaped(t.content, out)
 		io.WriteString(out, "</code>")
+	case *emphasis:
+		io.WriteString(out, "<em>")
+		for _, child := range t.children {
+			inlineToHTML(child, out)
+		}
+		io.WriteString(out, "</em>")
+	case *strong:
+		io.WriteString(out, "<strong>")
+		for _, child := range t.children {
+			inlineToHTML(child, out)
+		}
+		io.WriteString(out, "</strong>")
 	default:
 		log.Panicf("no HTML converter registered for Inline type %T", i)
 	}
