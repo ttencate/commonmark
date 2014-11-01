@@ -18,17 +18,17 @@ import (
 // accepting untrusted user input, you must run the output through a sanitizer
 // before sending it to a browser.
 func ToHTMLBytes(data []byte) ([]byte, error) {
-	doc, err := parse(data)
+	root, err := parse(data)
 	if err != nil {
 		return nil, err
 	}
 
 	var buffer bytes.Buffer
-	blockToHTML(doc, &buffer)
+	ToHTML(root, &buffer)
 	return buffer.Bytes(), nil
 }
 
-func parse(data []byte) (*document, error) {
+func parse(data []byte) (*Node, error) {
 	// See http://spec.commonmark.org/0.7/#appendix-a-a-parsing-strategy
 	// "Parsing has two phases:"
 
@@ -37,7 +37,7 @@ func parse(data []byte) (*document, error) {
 	// and so on—is constructed. Text is assigned to these blocks but not
 	// parsed. Link reference definitions are parsed and a map of links is
 	// constructed."
-	doc, err := parseBlocks(data)
+	root, err := parseBlocks(data)
 	if err != nil {
 		return nil, err
 	}
@@ -46,22 +46,16 @@ func parse(data []byte) (*document, error) {
 	// are parsed into sequences of Markdown inline elements (strings, code
 	// spans, links, emphasis, and so on), using the map of link references
 	// constructed in phase 1."
-	processInlines(doc)
+	processInlines(root)
 
-	return doc, nil
+	return root, nil
 }
 
-func processInlines(b Block) {
-	switch t := b.(type) {
-	case *atxHeader:
-		t.inlineContent = parseInlines(t.content)
-	case *paragraph:
-		// "Final spaces are stripped before inline parsing, so a paragraph that
-		// ends with two or more spaces will not end with a hard line break."
-		t.inlineContent = parseInlines(bytes.TrimRight(t.content, " "))
+func processInlines(n *Node) {
+	switch t := n.Content().(type) {
 	}
 
-	for _, child := range b.Children() {
+	for child := n.FirstChild(); child != nil; child = child.Next() {
 		processInlines(child)
 	}
 }
