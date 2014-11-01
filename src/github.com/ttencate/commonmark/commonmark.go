@@ -29,6 +29,11 @@ func ToHTMLBytes(data []byte) ([]byte, error) {
 }
 
 func parse(data []byte) (*Node, error) {
+	root, err := preprocess(data)
+	if err != nil {
+		return nil, err
+	}
+
 	// See http://spec.commonmark.org/0.7/#appendix-a-a-parsing-strategy
 	// "Parsing has two phases:"
 
@@ -37,10 +42,7 @@ func parse(data []byte) (*Node, error) {
 	// and so on—is constructed. Text is assigned to these blocks but not
 	// parsed. Link reference definitions are parsed and a map of links is
 	// constructed."
-	root, err := parseBlocks(data)
-	if err != nil {
-		return nil, err
-	}
+	parseBlocks(root)
 
 	// "In the second phase, the raw text contents of paragraphs and headers
 	// are parsed into sequences of Markdown inline elements (strings, code

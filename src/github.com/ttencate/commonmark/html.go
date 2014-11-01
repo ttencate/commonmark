@@ -8,21 +8,26 @@ import (
 // the given output stream.
 func ToHTML(n *Node, out io.Writer) {
 	content := n.Content()
-	startHTML(content)
-	contentHTML(content)
+	startHTML(content, out)
+	contentHTML(content, out)
 	for child := n.FirstChild(); child != nil; child = child.Next() {
 		ToHTML(child, out)
 	}
-	endHTML(content)
+	endHTML(content, out)
 }
 
-func startHTML(c NodeContent) {
+func startHTML(c NodeContent, out io.Writer) {
 }
 
-func endHTML(c NodeContent) {
+func endHTML(c NodeContent, out io.Writer) {
 }
 
-func contentHTML(c NodeContent) {
+func contentHTML(c NodeContent, out io.Writer) {
+	switch t := c.(type) {
+	case *UnprocessedLine:
+		// TODO panic instead
+		out.Write(t.Content)
+	}
 }
 
 var escapeMap = map[byte]string{

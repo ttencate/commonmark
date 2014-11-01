@@ -6,11 +6,23 @@ import (
 	"fmt"
 )
 
-// newScanner returns a new bufio.Scanner suitable for reading lines.
-func newScanner(data []byte) *bufio.Scanner {
+// preprocess returns a new Document node with UnprocessedLine nodes as
+// children, one for each input line.
+func preprocess(data []byte) (*Node, error) {
+	root := NewNode(&Document{})
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Split(scanLines)
-	return scanner
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		line = tabsToSpaces(line)
+		line = append(line, '\n')
+
+		root.AppendChild(NewNode(&UnprocessedLine{line}))
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return root, nil
 }
 
 // scanLines is a split function for bufio.Scanner that splits on CR, LF or
