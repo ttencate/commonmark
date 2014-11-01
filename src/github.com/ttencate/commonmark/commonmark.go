@@ -55,6 +55,9 @@ func parse(data []byte) (*Node, error) {
 
 func processInlines(n *Node) {
 	switch t := n.Content().(type) {
+	case *Paragraph:
+		parseInlines(n, t.Content)
+		t.Content = nil
 	}
 
 	for child := n.FirstChild(); child != nil; child = child.Next() {

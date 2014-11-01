@@ -17,16 +17,25 @@ func ToHTML(n *Node, out io.Writer) {
 }
 
 func startHTML(c NodeContent, out io.Writer) {
+	switch c.(type) {
+	case *Paragraph:
+		io.WriteString(out, "<p>")
+	}
 }
 
 func endHTML(c NodeContent, out io.Writer) {
+	switch c.(type) {
+	case *Paragraph:
+		io.WriteString(out, "</p>\n")
+	}
 }
 
 func contentHTML(c NodeContent, out io.Writer) {
 	switch t := c.(type) {
-	case *UnprocessedLine:
-		// TODO panic instead
-		out.Write(t.Content)
+	case *Text:
+		writeEscaped(t.Content, out)
+	case *RawLine:
+		panic("raw lines found in final parse tree")
 	}
 }
 

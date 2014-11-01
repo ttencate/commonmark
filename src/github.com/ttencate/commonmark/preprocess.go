@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-// preprocess returns a new Document node with UnprocessedLine nodes as
+// preprocess returns a new Document node with RawLine nodes as
 // children, one for each input line.
 func preprocess(data []byte) (*Node, error) {
 	root := NewNode(&Document{})
@@ -17,7 +17,19 @@ func preprocess(data []byte) (*Node, error) {
 		line = tabsToSpaces(line)
 		line = append(line, '\n')
 
-		root.AppendChild(NewNode(&UnprocessedLine{line}))
+		var indentation int
+		for indentation := 0; indentation < len(line); indentation++ {
+			if line[indentation] != ' ' {
+				break
+			}
+		}
+
+		root.AppendChild(NewNode(&RawLine{
+			Content:           line,
+			Indentation:       indentation,
+			IsBlank:           line[indentation] == '\n',
+			FirstNonSpaceChar: line[indentation],
+		}))
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
