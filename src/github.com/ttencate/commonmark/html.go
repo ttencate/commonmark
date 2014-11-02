@@ -18,6 +18,8 @@ func ToHTML(n *Node, out io.Writer) {
 
 func startHTML(c NodeContent, out io.Writer) {
 	switch c.(type) {
+	case *CodeSpan:
+		io.WriteString(out, "<code>")
 	case *Paragraph:
 		io.WriteString(out, "<p>")
 	}
@@ -25,6 +27,8 @@ func startHTML(c NodeContent, out io.Writer) {
 
 func endHTML(c NodeContent, out io.Writer) {
 	switch c.(type) {
+	case *CodeSpan:
+		io.WriteString(out, "</code>")
 	case *Paragraph:
 		io.WriteString(out, "</p>\n")
 	}
@@ -33,6 +37,8 @@ func endHTML(c NodeContent, out io.Writer) {
 func contentHTML(c NodeContent, out io.Writer) {
 	switch t := c.(type) {
 	case *Text:
+		writeEscaped(t.Content, out)
+	case *CodeSpan:
 		writeEscaped(t.Content, out)
 	case *RawHTML:
 		out.Write(t.Content)

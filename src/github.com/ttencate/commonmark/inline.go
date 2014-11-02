@@ -18,6 +18,11 @@ type Text struct {
 	Content []byte
 }
 
+// CodeSpan is the NodeContent for inline code spans.
+type CodeSpan struct {
+	Content []byte
+}
+
 // RawHTML is the NodeContent for raw HTML, sent to the output without any
 // escaping.
 type RawHTML struct {
@@ -39,6 +44,7 @@ func parseInlines(n *Node, text []byte) {
 	n.SetContent(&Text{trimWhitespaceRight(text)})
 
 	applyRecursively(n, toText(processRawHTML))
+	applyRecursively(n, toText(processCodeSpans))
 	applyRecursively(n, toText(processHardLineBreaks))
 	applyRecursively(n, toText(processSoftLineBreaks))
 }
@@ -72,6 +78,7 @@ func trimWhitespaceRight(data []byte) []byte {
 //
 // The function may modify the given node and its children, but must leave this
 // node in place and may not modify the tree above or around it.
+// TODO if it turns out we only use this with toText, merge the two
 func applyRecursively(n *Node, f func(*Node) bool) {
 	if f(n) {
 		for child := n.FirstChild(); child != nil; child = child.Next() {
@@ -90,6 +97,48 @@ func toText(f func(*Node, []byte)) func(*Node) bool {
 			return false
 		}
 		return true
+	}
+}
+
+func processCodeSpans(n *Node, text []byte) {
+	// "A backtick string is a string of one or more backtick characters (`)
+	// that is neither preceded nor followed by a backtick. A code span begins
+	// with a backtick string and ends with a backtick string of equal length.
+	// The contents of the code span are the characters between the two
+	// backtick strings, with leading and trailing spaces and newlines removed,
+	// and consecutive spaces and newlines collapsed to single spaces.
+
+	// Store previously seen, non-matched backtick strings by length.
+	var backtickStringsByLength = make(map[int]int)
+	numBackticks := 0
+	textStart := 0
+	for i := 0; i <= len(text); i++ {
+		if i < len(text) && text[i] == '`' {
+			numBackticks++
+		} else if numBackticks > 0 {
+			// End of backtick string. See if we have seen a matching one.
+			if opener, found := backtickStringsByLength[numBackticks]; found {
+				// Previous string of matching length exists. Extract code
+				// span.
+				precedingText := text[textStart:opener]
+				code := text[opener+numBackticks : i-numBackticks]
+				code = bytes.Trim(code, " \n")
+				code = collapseSpace(code)
+				n.AppendChild(NewNode(&Text{precedingText}))
+				n.AppendChild(NewNode(&CodeSpan{code}))
+				textStart = i
+				delete(backtickStringsByLength, numBackticks)
+			} else {
+				// No previous string of this length encountered. Store as
+				// potential opener.
+				backtickStringsByLength[numBackticks] = i - numBackticks
+			}
+			numBackticks = 0
+		}
+	}
+	if textStart != 0 {
+		n.AppendChild(NewNode(&Text{text[textStart:]}))
+		n.SetContent(nil)
 	}
 }
 
@@ -180,6 +229,7 @@ func processSoftLineBreaks(n *Node, text []byte) {
 // every run of space and newline characters is replaced by a single space.
 // Other whitespace remains unaffected, but this is what the spec says for code
 // spans.
+// TODO if nothing was collapsed, don't allocate a new slice
 func collapseSpace(data []byte) []byte {
 	var out []byte
 	var prevWasSpace bool
