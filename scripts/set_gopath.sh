@@ -8,7 +8,8 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   exit 1
 fi
 
-export GOPATH="$GOPATH:$(readlink -f $(dirname ${BASH_SOURCE[0]})/..)"
+cd ${BASH_SOURCE[0]}/..
+export GOPATH="$GOPATH:$(pwd)"
 
 echo 'Updated GOPATH in the current shell:'
 echo
