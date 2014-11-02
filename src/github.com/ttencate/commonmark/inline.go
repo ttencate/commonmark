@@ -3,6 +3,7 @@ package commonmark
 import (
 	"bytes"
 	"regexp"
+	"strings"
 )
 
 // RawText is the NodeContent for text that still needs to go through inline
@@ -14,6 +15,12 @@ type RawText struct {
 // Text is the NodeContent for text strings, sent to the output verbatim (but
 // possibly with escaping). Nodes of this type cannot have children.
 type Text struct {
+	Content []byte
+}
+
+// RawHTML is the NodeContent for raw HTML, sent to the output without any
+// escaping.
+type RawHTML struct {
 	Content []byte
 }
 
@@ -31,8 +38,9 @@ func parseInlines(n *Node, text []byte) {
 	// https://github.com/jgm/CommonMark/issues/176
 	n.SetContent(&Text{trimWhitespaceRight(text)})
 
-	applyRecursively(n, processHardLineBreaks)
-	applyRecursively(n, processSoftLineBreaks)
+	applyRecursively(n, toText(processRawHTML))
+	applyRecursively(n, toText(processHardLineBreaks))
+	applyRecursively(n, toText(processSoftLineBreaks))
 }
 
 var asciiPunct = []byte("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
@@ -72,37 +80,97 @@ func applyRecursively(n *Node, f func(*Node) bool) {
 	}
 }
 
-var hardLineBreakRe = regexp.MustCompile(`( {2,}|\\)\n *`)
-
-func processHardLineBreaks(n *Node) bool {
-	if t, ok := n.Content().(*Text); ok {
-		text := t.Content
-		m := hardLineBreakRe.FindAllIndex(text, -1)
-		if len(m) == 0 {
+// toText returns a function that can be given to applyRecursively. The
+// returned function applies f to Text nodes, passing in the text content, and
+// returning false for text nodes only.
+func toText(f func(*Node, []byte)) func(*Node) bool {
+	return func(n *Node) bool {
+		if t, ok := n.Content().(*Text); ok {
+			f(n, t.Content)
 			return false
 		}
-		n.SetContent(nil)
-		lineStart := 0
-		for i := 0; i < len(m); i++ {
-			n.AppendChild(NewNode(&Text{text[lineStart:m[i][0]]}))
-			n.AppendChild(NewNode(&HardLineBreak{}))
-			lineStart = m[i][1]
-		}
-		n.AppendChild(NewNode(&Text{text[lineStart:]}))
-		return false
+		return true
 	}
-	return true
+}
+
+// "A tag name consists of an ASCII letter followed by zero or more ASCII
+// letters or digits."
+var tagName = `[a-zA-Z][a-zA-Z0-9]*`
+
+// "An attribute value specification consists of optional whitespace, a = character, optional whitespace, and an attribute value.
+// "An attribute value consists of an unquoted attribute value, a single-quoted
+// attribute value, or a double-quoted attribute value.
+// "An unquoted attribute value is a nonempty string of characters not
+// including spaces, ", ', =, <, >, or `.
+// "A single-quoted attribute value consists of ', zero or more characters not
+// including ', and a final '.
+// "A double-quoted attribute value consists of ", zero or more characters not
+// including ", and a final "."
+var attributeValueSpecification = `\s*=\s*([^ "'=<>` + "`" + `]+|'[^']*'|"[^"]*"`
+var attribute = `\s+[a-zA-Z_:][a-zA-Z0-9_.:-]*(` + attributeValueSpecification + `))?`
+
+// "An HTML tag consists of an open tag, a closing tag, an HTML comment, a
+// processing instruction, an element type declaration, or a CDATA section."
+var rawHTMLRe = regexp.MustCompile("(?s:" + strings.Join([]string{
+	// "An open tag consists of a < character, a tag name, zero or more
+	// attributes, optional whitespace, an optional / character, and a >
+	// character."
+	`<` + tagName + `(` + attribute + `)*\s*/?>`,
+	// "A closing tag consists of the string </, a tag name, optional
+	// whitespace, and the character >."
+	`</` + tagName + `\s*>`,
+	// "An HTML comment consists of the string <!--, a string of characters not
+	// including the string --, and the string -->."
+	`<!--(-?[^-])*-?-->`,
+	// "A processing instruction consists of the string <?, a string of
+	// characters not including the string ?>, and the string ?>."
+	`<\?.*?\?>`,
+	// "A declaration consists of the string <!, a name consisting of one or
+	// more uppercase ASCII letters, whitespace, a string of characters not
+	// including the character >, and the character >.
+	`<![A-Z]+\s+.+?>`,
+	// "A CDATA section consists of the string <![CDATA[, a string of
+	// characters not including the string ]]>, and the string ]]>."
+	`<!\[CDATA\[.*?\]\]>`}, "|") + ")")
+
+func processRawHTML(n *Node, text []byte) {
+	m := rawHTMLRe.FindAllIndex(text, -1)
+	if len(m) == 0 {
+		return
+	}
+	n.SetContent(nil)
+	textStart := 0
+	for i := 0; i < len(m); i++ {
+		n.AppendChild(NewNode(&Text{text[textStart:m[i][0]]}))
+		n.AppendChild(NewNode(&RawHTML{text[m[i][0]:m[i][1]]}))
+		textStart = m[i][1]
+	}
+	n.AppendChild(NewNode(&Text{text[textStart:]}))
+}
+
+var hardLineBreakRe = regexp.MustCompile(`( {2,}|\\)\n *`)
+
+func processHardLineBreaks(n *Node, text []byte) {
+	m := hardLineBreakRe.FindAllIndex(text, -1)
+	if len(m) == 0 {
+		return
+	}
+	n.SetContent(nil)
+	lineStart := 0
+	for i := 0; i < len(m); i++ {
+		n.AppendChild(NewNode(&Text{text[lineStart:m[i][0]]}))
+		n.AppendChild(NewNode(&HardLineBreak{}))
+		lineStart = m[i][1]
+	}
+	n.AppendChild(NewNode(&Text{text[lineStart:]}))
 }
 
 var softLineBreakRe = regexp.MustCompile(` *\n *`)
 var softLineBreak = []byte("\n")
 
-func processSoftLineBreaks(n *Node) bool {
-	if t, ok := n.Content().(*Text); ok {
-		t.Content = softLineBreakRe.ReplaceAll(t.Content, softLineBreak)
-		return false
-	}
-	return true
+func processSoftLineBreaks(n *Node, text []byte) {
+	text = softLineBreakRe.ReplaceAll(text, softLineBreak)
+	n.SetContent(&Text{text})
 }
 
 // collapseSpace collapses whitespace more or less the way a browser would:
