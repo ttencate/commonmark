@@ -185,7 +185,7 @@ func (n *Node) stringRecurse(w io.Writer, indent int) {
 	}
 	fmt.Fprintf(w, "%T\n", n.Content())
 	for child := n.FirstChild(); child != nil; child = child.Next() {
-		child.stringRecurse(w, indent + 1)
+		child.stringRecurse(w, indent+1)
 	}
 }
 
