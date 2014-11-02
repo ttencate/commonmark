@@ -17,18 +17,19 @@ type Node struct {
 	content    NodeContent
 }
 
-// NewNode creates a new, unparented Node with the given content. The content
-// may not be nil.
+// NewNode creates a new, unparented Node with the given content.
 func NewNode(content NodeContent) *Node {
-	if content == nil {
-		panic("node content cannot be nil")
-	}
 	return &Node{content: content}
 }
 
 // Content returns the content of the node.
 func (n *Node) Content() NodeContent {
 	return n.content
+}
+
+// SetContent sets new content on the node.
+func (n *Node) SetContent(NodeContent c) {
+	n.content = c
 }
 
 // Parent returns the parent of the node, or nil if it doesn't have any.

@@ -27,11 +27,9 @@ type RawLine struct {
 	FirstNonSpaceChar byte
 }
 
-// Paragraph is the NodeContent for a paragraph of text.
-type Paragraph struct {
-	// Content is the raw content of this paragraph, before inline processing.
-	Content []byte
-}
+// Paragraph is the NodeContent for a paragraph of text. Before inline
+// processing, it will contain a single Text node.
+type Paragraph struct{}
 
 // parseBlocks performs the first parsing pass: turning the document into a
 // tree of blocks. Inline content is not parsed at this time.
@@ -54,17 +52,19 @@ func (p *blockParser) processParagraphs(n *Node) {
 	// result of parsing the paragraph’s raw content as inlines. The
 	// paragraph’s raw content is formed by concatenating the lines and
 	// removing initial and final spaces."
-	var par *Paragraph
+	var text *Text
 	for child := n.FirstChild(); child != nil; {
 		if rawLine, ok := child.Content().(*RawLine); ok {
-			if par == nil {
-				par = &Paragraph{}
-				child.InsertBefore(NewNode(par))
+			if text == nil {
+				text := &Text{}
+				par := NewNode(&Paragraph{})
+				par.AppendChild(NewNode(text))
+				child.InsertBefore(par)
 			}
-			par.Content = append(par.Content, rawLine.Content...)
+			text.Content = append(text.Content, rawLine.Content...)
 			child = removeAndNext(child)
 		} else {
-			par = nil
+			text = nil
 			child = child.Next()
 		}
 	}

@@ -10,7 +10,7 @@ type Text struct {
 	Content []byte
 }
 
-func parseInlines(parent *Node, data []byte) {
+func parseInlines() {
 	parser := inlineParser{
 		parent: parent,
 		data:   data,
