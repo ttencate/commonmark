@@ -21,20 +21,18 @@ type Text struct {
 // tags in HTML.
 type HardLineBreak struct{}
 
-// parseInlines processes inline elements on the given node. It returns a new
-// Node reflecting the parsed version of the given text.
-func parseInlines(text []byte) *Node {
+// parseInlines processes inline elements on the given node. It is assumed to
+// be a RawText node containing the given text.
+func parseInlines(n *Node, text []byte) {
 	// I can't find where the spec decrees this. But the reference
 	// implementation does it this way:
 	// https://github.com/jgm/CommonMark/blob/67619a5d5c71c44565a9a0413aaf78f9baece528/src/inlines.c#L183
 	// Filed issue:
 	// https://github.com/jgm/CommonMark/issues/176
-	text = trimWhitespaceRight(text)
-	n := NewNode(&Text{text})
+	n.SetContent(&Text{trimWhitespaceRight(text)})
 
-	n = processHardLineBreaks(n)
-
-	return n
+	applyRecursively(n, processHardLineBreaks)
+	applyRecursively(n, processSoftLineBreaks)
 }
 
 var asciiPunct = []byte("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
@@ -60,17 +58,30 @@ func trimWhitespaceRight(data []byte) []byte {
 	return data[:i]
 }
 
-var hardLineBreakRe = regexp.MustCompile(`( {2,}|\\)\n *`)
-var hardLineBreak = []byte("<br />\n")
+// applyRecursively applies the given function to each node in the tree in
+// turn. Parents first, then their children in order. If the function returns
+// false for any node, recursion does not descend into that node's children.
+//
+// The function may modify the given node and its children, but must leave this
+// node in place and may not modify the tree above or around it.
+func applyRecursively(n *Node, f func(*Node) bool) {
+	if f(n) {
+		for child := n.FirstChild(); child != nil; child = child.Next() {
+			applyRecursively(child, f)
+		}
+	}
+}
 
-func processHardLineBreaks(n *Node) *Node {
+var hardLineBreakRe = regexp.MustCompile(`( {2,}|\\)\n *`)
+
+func processHardLineBreaks(n *Node) bool {
 	if t, ok := n.Content().(*Text); ok {
 		text := t.Content
 		m := hardLineBreakRe.FindAllIndex(text, -1)
 		if len(m) == 0 {
-			return n
+			return false
 		}
-		n = NewNode(nil)
+		n.SetContent(nil)
 		lineStart := 0
 		for i := 0; i < len(m); i++ {
 			n.AppendChild(NewNode(&Text{text[lineStart:m[i][0]]}))
@@ -78,13 +89,20 @@ func processHardLineBreaks(n *Node) *Node {
 			lineStart = m[i][1]
 		}
 		n.AppendChild(NewNode(&Text{text[lineStart:]}))
-		return n
-	} else {
-		for child := n.FirstChild(); child != nil; child = child.Next() {
-			processHardLineBreaks(child)
-		}
-		return n
+		return false
 	}
+	return true
+}
+
+var softLineBreakRe = regexp.MustCompile(` *\n *`)
+var softLineBreak = []byte("\n")
+
+func processSoftLineBreaks(n *Node) bool {
+	if t, ok := n.Content().(*Text); ok {
+		t.Content = softLineBreakRe.ReplaceAll(t.Content, softLineBreak)
+		return false
+	}
+	return true
 }
 
 // collapseSpace collapses whitespace more or less the way a browser would:

@@ -56,7 +56,7 @@ func parse(data []byte) (*Node, error) {
 func processInlines(n *Node) {
 	switch t := n.Content().(type) {
 	case *RawText:
-		n.Replace(parseInlines(t.Content))
+		parseInlines(n, t.Content)
 	}
 
 	for child := n.FirstChild(); child != nil; child = child.Next() {

@@ -148,29 +148,6 @@ func (n *Node) Remove() {
 	n.next = nil
 }
 
-// Replace substitutes this node by the given node. This node must have a
-// parent; the replacement must not.
-func (n *Node) Replace(replacement *Node) {
-	n.assertHasParent()
-	replacement.assertHasNoParent()
-	if n.prev == nil {
-		n.parent.firstChild = replacement
-	} else {
-		n.prev.next = replacement
-	}
-	if n.next == nil {
-		n.parent.lastChild = replacement
-	} else {
-		n.next.prev = replacement
-	}
-	replacement.parent = n.parent
-	replacement.prev = n.next
-	replacement.next = n.next
-	n.parent = nil
-	n.prev = nil
-	n.next = nil
-}
-
 // String converts the node to a printable string, indenting child nodes and
 // showing content types. It ends with a newline.
 func (n *Node) String() string {
