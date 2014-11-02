@@ -28,7 +28,7 @@ func (n *Node) Content() NodeContent {
 }
 
 // SetContent sets new content on the node.
-func (n *Node) SetContent(NodeContent c) {
+func (n *Node) SetContent(c NodeContent) {
 	n.content = c
 }
 
@@ -136,6 +136,29 @@ func (n *Node) Remove() {
 	} else {
 		n.next.prev = n.prev
 	}
+	n.parent = nil
+	n.prev = nil
+	n.next = nil
+}
+
+// Replace substitutes this node by the given node. This node must have a
+// parent; the replacement must not.
+func (n *Node) Replace(replacement *Node) {
+	n.assertHasParent()
+	replacement.assertHasNoParent()
+	if n.prev == nil {
+		n.parent.firstChild = replacement
+	} else {
+		n.prev.next = replacement
+	}
+	if n.next == nil {
+		n.parent.lastChild = replacement
+	} else {
+		n.next.prev = replacement
+	}
+	replacement.parent = n.parent
+	replacement.prev = n.next
+	replacement.next = n.next
 	n.parent = nil
 	n.prev = nil
 	n.next = nil

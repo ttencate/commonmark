@@ -4,33 +4,28 @@ import (
 	"bytes"
 )
 
+// RawText is the NodeContent for text that still needs to go through inline
+// parsing. Nodes of this type cannot have children.
+type RawText struct {
+	Content []byte
+}
+
 // Text is the NodeContent for text strings, sent to the output verbatim (but
-// possibly with escaping).
+// possibly with escaping). Nodes of this type cannot have children.
 type Text struct {
 	Content []byte
 }
 
-func parseInlines() {
-	parser := inlineParser{
-		parent: parent,
-		data:   data,
-	}
-	parser.parse()
-}
-
-type inlineParser struct {
-	parent *Node
-	data   []byte
-}
-
-func (p *inlineParser) parse() {
+// parseInlines processes inline elements on the given node. It returns a new
+// Node reflecting the parsed version of the given text.
+func parseInlines(text []byte) *Node {
 	// I can't find where the spec decrees this. But the reference
 	// implementation does it this way:
 	// https://github.com/jgm/CommonMark/blob/67619a5d5c71c44565a9a0413aaf78f9baece528/src/inlines.c#L183
 	// Filed issue:
 	// https://github.com/jgm/CommonMark/issues/176
-	text := trimWhitespaceRight(p.data)
-	p.parent.AppendChild(NewNode(&Text{text}))
+	text = trimWhitespaceRight(text)
+	return NewNode(&Text{text})
 }
 
 var asciiPunct = []byte("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
@@ -41,7 +36,7 @@ func isASCIIPunct(char byte) bool {
 
 func trimWhitespaceRight(data []byte) []byte {
 	var i int
-	for i = len(data) - 1; i > 0; i-- {
+	for i = len(data); i > 0; i-- {
 		c := data[i-1]
 		if c != ' ' && c != '\n' && c != '\r' && c != '\t' && c != '\f' {
 			break
