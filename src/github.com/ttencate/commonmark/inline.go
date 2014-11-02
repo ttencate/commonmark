@@ -107,6 +107,9 @@ var tagName = `[a-zA-Z][a-zA-Z0-9]*`
 // "A double-quoted attribute value consists of ", zero or more characters not
 // including ", and a final "."
 var attributeValueSpecification = `\s*=\s*([^ "'=<>` + "`" + `]+|'[^']*'|"[^"]*"`
+
+// "An attribute consists of whitespace, an attribute name, and an optional
+// attribute value specification."
 var attribute = `\s+[a-zA-Z_:][a-zA-Z0-9_.:-]*(` + attributeValueSpecification + `))?`
 
 // "An HTML tag consists of an open tag, a closing tag, an HTML comment, a
