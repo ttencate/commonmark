@@ -34,6 +34,8 @@ func contentHTML(c NodeContent, out io.Writer) {
 	switch t := c.(type) {
 	case *Text:
 		writeEscaped(t.Content, out)
+	case *HardLineBreak:
+		io.WriteString(out, "<br />\n")
 	case *RawText:
 		panic("raw text found in final parse tree")
 	case *RawLine:

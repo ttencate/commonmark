@@ -1,5 +1,11 @@
 package commonmark
 
+import (
+	"bytes"
+	"fmt"
+	"io"
+)
+
 // NodeContent is the interface that must be implemented by all types of parse
 // tree node content, be it inline or block content, container block or leaf
 // block.
@@ -27,7 +33,8 @@ func (n *Node) Content() NodeContent {
 	return n.content
 }
 
-// SetContent sets new content on the node.
+// SetContent sets new content on the node. nil content can be used to indicate
+// container-only nodes, without semantic meaning.
 func (n *Node) SetContent(c NodeContent) {
 	n.content = c
 }
@@ -162,6 +169,24 @@ func (n *Node) Replace(replacement *Node) {
 	n.parent = nil
 	n.prev = nil
 	n.next = nil
+}
+
+// String converts the node to a printable string, indenting child nodes and
+// showing content types. It ends with a newline.
+func (n *Node) String() string {
+	buf := bytes.Buffer{}
+	n.stringRecurse(&buf, 0)
+	return buf.String()
+}
+
+func (n *Node) stringRecurse(w io.Writer, indent int) {
+	for i := 0; i < indent; i++ {
+		io.WriteString(w, "  ")
+	}
+	fmt.Fprintf(w, "%T\n", n.Content())
+	for child := n.FirstChild(); child != nil; child = child.Next() {
+		child.stringRecurse(w, indent + 1)
+	}
 }
 
 func (n *Node) assertHasParent() {
