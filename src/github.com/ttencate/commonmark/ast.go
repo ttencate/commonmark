@@ -110,6 +110,7 @@ func (n *Node) InsertBefore(sibling *Node) {
 	} else {
 		n.prev.next = sibling
 	}
+	sibling.parent = n.parent
 	sibling.prev = n.prev
 	sibling.next = n
 	n.prev = sibling
@@ -125,6 +126,7 @@ func (n *Node) InsertAfter(sibling *Node) {
 	} else {
 		n.next.prev = sibling
 	}
+	sibling.parent = n.parent
 	sibling.prev = n
 	sibling.next = n.next
 	n.next = sibling
@@ -160,7 +162,7 @@ func (n *Node) stringRecurse(w io.Writer, indent int) {
 	for i := 0; i < indent; i++ {
 		io.WriteString(w, "  ")
 	}
-	fmt.Fprintf(w, "%T\n", n.Content())
+	fmt.Fprintf(w, "%T: %+v\n", n.Content(), n.Content())
 	for child := n.FirstChild(); child != nil; child = child.Next() {
 		child.stringRecurse(w, indent+1)
 	}

@@ -38,6 +38,7 @@ func TestSpec(t *testing.T) {
 	var sections []string
 	sectionResults := make(map[string]*result)
 	for ex := range examples {
+		// if ex.number != 305 { continue }
 		var failed bool
 		actualOutput, err := ToHTMLBytes(ex.input)
 		if err != nil {
@@ -45,8 +46,9 @@ func TestSpec(t *testing.T) {
 			t.Errorf("error in section \"%s\" example %d: %s\ninput:\n%s", ex.section, ex.number, err, ex.input)
 		} else if !bytes.Equal(actualOutput, ex.output) {
 			failed = true
-			t.Errorf("incorrect output in section \"%s\" example %d\ninput:\n%s\nexpected output:\n%s\nactual output:\n%s",
-				ex.section, ex.number, ex.input, ex.output, actualOutput)
+			ast, _ := parse(ex.input)
+			t.Errorf("incorrect output in section \"%s\" example %d\ninput:\n%s\nexpected output:\n%s\nactual output:\n%s\nast:\n%s",
+				ex.section, ex.number, ex.input, ex.output, actualOutput, ast)
 		}
 
 		if sectionResults[ex.section] == nil {

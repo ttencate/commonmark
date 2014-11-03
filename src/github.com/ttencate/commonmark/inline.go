@@ -29,6 +29,13 @@ type RawHTML struct {
 	Content []byte
 }
 
+// Emphasis is the NodeContent for emphasis, typically rendered as italic text.
+type Emphasis struct{}
+
+// StrongEmphasis is the NodeContent for strong emphasis, typically rendered as
+// bold text.
+type StrongEmphasis struct{}
+
 // HardLineBreak is the NodeContent for hard line breaks, rendered as <br />
 // tags in HTML.
 type HardLineBreak struct{}
@@ -45,6 +52,7 @@ func parseInlines(n *Node, text []byte) {
 
 	applyRecursively(n, toText(processRawHTML))
 	applyRecursively(n, toText(processCodeSpans))
+	applyRecursively(n, toText(processEmphasis))
 	applyRecursively(n, toText(processHardLineBreaks))
 	applyRecursively(n, toText(processSoftLineBreaks))
 }
@@ -59,13 +67,23 @@ func isASCIIPunct(char byte) bool {
 	return bytes.IndexByte(asciiPunct, char) >= 0
 }
 
+// isASCIIAlNum mimics the behaviour of isalnum(3) for the C locale.
+func isASCIIAlNum(char byte) bool {
+	return char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z' || char >= '0' && char <= '9'
+}
+
+// isASCIISpace mimics the behaviour of isspace(3) for the C locale.
+func isASCIISpace(char byte) bool {
+	return char == ' ' || char == '\n' || char == '\r' || char == '\t' || char == '\f'
+}
+
 // trimWhitespaceRight returns a subslice where all trailing whitespace (ASCII
 // only) is removed.
 func trimWhitespaceRight(data []byte) []byte {
 	var i int
 	for i = len(data); i > 0; i-- {
 		c := data[i-1]
-		if c != ' ' && c != '\n' && c != '\r' && c != '\t' && c != '\f' {
+		if !isASCIISpace(c) {
 			break
 		}
 	}
@@ -109,6 +127,10 @@ func processCodeSpans(n *Node, text []byte) {
 	// and consecutive spaces and newlines collapsed to single spaces.
 
 	// Store previously seen, non-matched backtick strings by length.
+	// TODO This is buggy for overlapping spans, use a stack. Consider this case:
+	// ``foo`bar``biz`
+	// The second `` will match the first, and take the single ` up into the
+	// code span, but the second ` will still try to match it.
 	var backtickStringsByLength = make(map[int]int)
 	numBackticks := 0
 	textStart := 0
@@ -139,6 +161,121 @@ func processCodeSpans(n *Node, text []byte) {
 	if textStart != 0 {
 		n.AppendChild(NewNode(&Text{text[textStart:]}))
 		n.SetContent(nil)
+	}
+}
+
+func processEmphasis(n *Node, text []byte) {
+	n.SetContent(nil)
+	type stackEntry struct {
+		delimChar   byte
+		delimsStart int
+		numDelims   int
+		delimsNode  *Node
+	}
+	var stack []stackEntry
+	textStart := 0
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		if c == '*' || c == '_' {
+			// Find the end of this delimiter string.
+			numDelims := 0
+			delimsStart := i
+			for ; i < len(text) && text[i] == c; i++ {
+				numDelims++
+			}
+			// Ignore any string of more than 3 delimiters entirely.
+			if numDelims > 3 {
+				continue
+			}
+			// Create a node for the preceding text.
+			if i > textStart {
+				n.AppendChild(NewNode(&Text{text[textStart:delimsStart]}))
+			}
+			textStart = i
+			// See if this delimiter string can close emphasis.
+			if (delimsStart == 0 || !isASCIISpace(text[delimsStart-1])) &&
+				(c != '_' || i == len(text) || !isASCIIAlNum(text[i])) {
+				// Walk the stack until we find a suitable opening delimiter.
+				for j := len(stack) - 1; j >= 0; j-- {
+					entry := stack[j]
+					if entry.delimChar == c {
+						// Consume as many delimiter characters as we can:
+						// either 1 or 2.
+						consumeDelims := 1
+						if numDelims == 3 && entry.numDelims == 3 {
+							// "An interpretation <strong><em>...</em></strong>
+							// is always preferred to
+							// <em><strong>..</strong></em>."
+							consumeDelims = 1
+						} else if numDelims >= 2 && entry.numDelims >= 2 {
+							// "An interpretation <strong>...</strong> is
+							// always preferred to <em><em>...</em></em>."
+							consumeDelims = 2
+						}
+						// After the opener node, insert a container for the
+						// emphasis span, and shove all subsequent siblings
+						// underneath it.
+						var emphasisNode *Node
+						if consumeDelims == 1 {
+							emphasisNode = NewNode(&Emphasis{})
+						} else {
+							emphasisNode = NewNode(&StrongEmphasis{})
+						}
+						entry.delimsNode.InsertAfter(emphasisNode)
+						for {
+							sibling := emphasisNode.Next()
+							if sibling == nil {
+								break
+							}
+							sibling.Remove()
+							emphasisNode.AppendChild(sibling)
+						}
+						// Trim the stack.
+						stack = stack[:j]
+						// Check if the entire opener was consumed.
+						entry.numDelims -= consumeDelims
+						if entry.numDelims > 0 {
+							// We did not consume the entire opener. Push the
+							// remainder back onto the stack and adjust the
+							// range of its text node.
+							stack = append(stack, entry)
+							entry.delimsNode.SetContent(&Text{text[entry.delimsStart : entry.delimsStart+entry.numDelims]})
+							j++
+						} else {
+							// We did consume the entire opener. Remove its
+							// node.
+							entry.delimsNode.Remove()
+						}
+						// Record that we used up (the initial) part or all of
+						// our delimiter; if all, bail out.
+						numDelims -= consumeDelims
+						delimsStart += consumeDelims
+						if numDelims <= 0 {
+							break
+						}
+					}
+				}
+			}
+			if numDelims == 0 {
+				// Already consumed the entire string for closing emphasis.
+				continue
+			}
+			// Create a dedicated text node just for the delimiter. If it
+			// is matched later, this node is turned into an emphasis node
+			// and all subsequent siblings become its children. If it
+			// remains unmatched, we'll end up outputting it as text.
+			delimsNode := NewNode(&Text{text[delimsStart:i]})
+			n.AppendChild(delimsNode)
+			// See if this delimiter string can open emphasis.
+			if (i == len(text) || !isASCIISpace(text[i])) &&
+				(c != '_' || delimsStart == 0 || !isASCIIAlNum(text[delimsStart-1])) {
+				// Push it onto the stack.
+				stack = append(stack, stackEntry{c, delimsStart, numDelims, delimsNode})
+			}
+		}
+	}
+	if textStart < len(text) {
+		n.AppendChild(NewNode(&Text{text[textStart:]}))
 	}
 }
 
