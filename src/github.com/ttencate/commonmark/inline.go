@@ -2,6 +2,7 @@ package commonmark
 
 import (
 	"bytes"
+	"log"
 	"regexp"
 	"strings"
 )
@@ -52,7 +53,7 @@ func parseInlines(n *Node, text []byte) {
 
 	applyRecursively(n, forTextNodes(processRawHTML))
 	applyRecursively(n, forTextNodes(processCodeSpans))
-	applyRecursively(n, forTextNodes(processEmphasis))
+	applyRecursively(n, processEmphasis)
 	applyRecursively(n, forTextNodes(processHardLineBreaks))
 	applyRecursively(n, forTextNodes(processSoftLineBreaks))
 }
@@ -182,41 +183,50 @@ func splitTextNode(n *Node, endOfFirst, startOfSecond int) *Node {
 	return right
 }
 
-func processEmphasis(n *Node, text []byte) {
-	n.SetContent(nil)
+func processEmphasis(n *Node) {
 	type stackEntry struct {
 		delimChar   byte
 		delimsStart int
 		numDelims   int
-		delimsNode  *Node
+		textNode    *Node
 	}
+	// TODO get _foo *bar_ biz* added to the spec (symmetrical case is there)
 	var stack []stackEntry
-	textStart := 0
-	for i := 0; i < len(text); i++ {
-		c := text[i]
-		if c == '*' || c == '_' {
-			// Find the end of this delimiter string.
-			numDelims := 0
-			delimsStart := i
-			for ; i < len(text) && text[i] == c; i++ {
-				numDelims++
-			}
-			// Ignore any string of more than 3 delimiters entirely.
-			if numDelims > 3 {
-				continue
-			}
-			// Create a node for the preceding text.
-			if i > textStart {
-				n.AppendChild(NewNode(&Text{text[textStart:delimsStart]}))
-			}
-			textStart = i
-			// See if this delimiter string can close emphasis.
-			if (delimsStart == 0 || !isASCIISpace(text[delimsStart-1])) &&
-				(c != '_' || i == len(text) || !isASCIIAlNum(text[i])) {
-				// Walk the stack until we find a suitable opening delimiter.
-				for j := len(stack) - 1; j >= 0; j-- {
-					entry := stack[j]
-					if entry.delimChar == c {
+	for child := n.FirstChild(); child != nil; child = child.Next() {
+		var text []byte
+		if textContent, ok := child.Content().(*Text); ok {
+			text = textContent.Content
+		} else {
+			// We have already been recursively applied to this child. Nothing
+			// to do.
+			continue
+		}
+		for i := 0; i < len(text); i++ {
+			c := text[i]
+			if c == '*' || c == '_' {
+				// Find the end of this delimiter string.
+				numDelims := 0
+				delimsStart := i
+				for ; i < len(text) && text[i] == c; i++ {
+					numDelims++
+				}
+				// Ignore any string of more than 3 delimiters entirely.
+				if numDelims > 3 {
+					continue
+				}
+				// See if this delimiter string can close emphasis.
+				if (delimsStart == 0 || !isASCIISpace(text[delimsStart-1])) &&
+					(c != '_' || i == len(text) || !isASCIIAlNum(text[i])) {
+					// Walk the stack until we find a suitable opening delimiter.
+					var j int
+					var entry stackEntry
+					for j = len(stack) - 1; j >= 0; j-- {
+						entry = stack[j]
+						if entry.delimChar == c {
+							break
+						}
+					}
+					if j >= 0 {
 						// Consume as many delimiter characters as we can:
 						// either 1 or 2.
 						consumeDelims := 1
@@ -230,6 +240,14 @@ func processEmphasis(n *Node, text []byte) {
 							// always preferred to <em><em>...</em></em>."
 							consumeDelims = 2
 						}
+						// Split the text nodes containing the delimiters,
+						// omitting the innermost used delimiter characters
+						// themselves. Split the closer node first in case it
+						// is the same as the opener node.
+						log.Printf("before node splits:\n%sentry: %+v\n%d %d %d", n, entry, delimsStart, numDelims, consumeDelims)
+						nodeAfterCloser := splitTextNode(child, delimsStart, delimsStart+consumeDelims)
+						splitTextNode(entry.textNode, entry.delimsStart+entry.numDelims-consumeDelims, entry.delimsStart+entry.numDelims)
+						log.Printf("after node splits:\n%s", n)
 						// After the opener node, insert a container for the
 						// emphasis span, and shove all subsequent siblings
 						// underneath it.
@@ -239,61 +257,43 @@ func processEmphasis(n *Node, text []byte) {
 						} else {
 							emphasisNode = NewNode(&StrongEmphasis{})
 						}
-						entry.delimsNode.InsertAfter(emphasisNode)
+						entry.textNode.InsertAfter(emphasisNode)
+						log.Printf("after insertion:\n%s", n)
 						for {
 							sibling := emphasisNode.Next()
-							if sibling == nil {
+							if sibling == nodeAfterCloser {
 								break
 							}
+							log.Printf("moving sibling %s", sibling.Content())
 							sibling.Remove()
 							emphasisNode.AppendChild(sibling)
 						}
+						log.Printf("after sibling move:\n%s", n)
+						// Ensure we continue in the right place: with the next
+						// sibling of the newly created emphasis node.
+						child = emphasisNode
 						// Trim the stack.
 						stack = stack[:j]
-						// Check if the entire opener was consumed.
+						// If not all opener delimiters were consumed, push the
+						// entry back onto the stack. Its node pointer is still
+						// valid.
 						entry.numDelims -= consumeDelims
 						if entry.numDelims > 0 {
-							// We did not consume the entire opener. Push the
-							// remainder back onto the stack and adjust the
-							// range of its text node.
 							stack = append(stack, entry)
-							entry.delimsNode.SetContent(&Text{text[entry.delimsStart : entry.delimsStart+entry.numDelims]})
-							j++
-						} else {
-							// We did consume the entire opener. Remove its
-							// node.
-							entry.delimsNode.Remove()
 						}
-						// Record that we used up (the initial) part or all of
-						// our delimiter; if all, bail out.
-						numDelims -= consumeDelims
-						delimsStart += consumeDelims
-						if numDelims <= 0 {
-							break
-						}
+						// And restart the inner loop so it picks up the right
+						// indices for the subsequent node.
+						break
 					}
 				}
-			}
-			if numDelims == 0 {
-				// Already consumed the entire string for closing emphasis.
-				continue
-			}
-			// Create a dedicated text node just for the delimiter. If it
-			// is matched later, this node is turned into an emphasis node
-			// and all subsequent siblings become its children. If it
-			// remains unmatched, we'll end up outputting it as text.
-			delimsNode := NewNode(&Text{text[delimsStart:i]})
-			n.AppendChild(delimsNode)
-			// See if this delimiter string can open emphasis.
-			if (i == len(text) || !isASCIISpace(text[i])) &&
-				(c != '_' || delimsStart == 0 || !isASCIIAlNum(text[delimsStart-1])) {
-				// Push it onto the stack.
-				stack = append(stack, stackEntry{c, delimsStart, numDelims, delimsNode})
+				// See if this delimiter string can open emphasis.
+				if (i == len(text) || !isASCIISpace(text[i])) &&
+					(c != '_' || delimsStart == 0 || !isASCIIAlNum(text[delimsStart-1])) {
+					// Push it onto the stack.
+					stack = append(stack, stackEntry{c, delimsStart, numDelims, child})
+				}
 			}
 		}
-	}
-	if textStart < len(text) {
-		n.AppendChild(NewNode(&Text{text[textStart:]}))
 	}
 }
 
