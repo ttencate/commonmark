@@ -162,7 +162,7 @@ func (n *Node) stringRecurse(w io.Writer, indent int) {
 	for i := 0; i < indent; i++ {
 		io.WriteString(w, "  ")
 	}
-	fmt.Fprintf(w, "%T: %s\n", n.Content(), n.Content())
+	fmt.Fprintf(w, "%T @ %p: %s\n", n.Content(), n, n.Content())
 	for child := n.FirstChild(); child != nil; child = child.Next() {
 		child.stringRecurse(w, indent+1)
 	}

@@ -2,7 +2,6 @@ package commonmark
 
 import (
 	"bytes"
-	"log"
 	"regexp"
 	"strings"
 )
@@ -184,6 +183,8 @@ func splitTextNode(n *Node, endOfFirst, startOfSecond int) *Node {
 }
 
 func processEmphasis(n *Node) {
+	// TODO handle when the root node is text. Does not happen thanks to code
+	// span parsing, but should not rely on it.
 	type stackEntry struct {
 		delimChar   byte
 		delimsStart int
@@ -201,7 +202,7 @@ func processEmphasis(n *Node) {
 			// to do.
 			continue
 		}
-		for i := 0; i < len(text); i++ {
+		for i := 0; i < len(text); {
 			c := text[i]
 			if c == '*' || c == '_' {
 				// Find the end of this delimiter string.
@@ -244,10 +245,8 @@ func processEmphasis(n *Node) {
 						// omitting the innermost used delimiter characters
 						// themselves. Split the closer node first in case it
 						// is the same as the opener node.
-						log.Printf("before node splits:\n%sentry: %+v\n%d %d %d", n, entry, delimsStart, numDelims, consumeDelims)
 						nodeAfterCloser := splitTextNode(child, delimsStart, delimsStart+consumeDelims)
 						splitTextNode(entry.textNode, entry.delimsStart+entry.numDelims-consumeDelims, entry.delimsStart+entry.numDelims)
-						log.Printf("after node splits:\n%s", n)
 						// After the opener node, insert a container for the
 						// emphasis span, and shove all subsequent siblings
 						// underneath it.
@@ -258,17 +257,14 @@ func processEmphasis(n *Node) {
 							emphasisNode = NewNode(&StrongEmphasis{})
 						}
 						entry.textNode.InsertAfter(emphasisNode)
-						log.Printf("after insertion:\n%s", n)
 						for {
 							sibling := emphasisNode.Next()
 							if sibling == nodeAfterCloser {
 								break
 							}
-							log.Printf("moving sibling %s", sibling.Content())
 							sibling.Remove()
 							emphasisNode.AppendChild(sibling)
 						}
-						log.Printf("after sibling move:\n%s", n)
 						// Ensure we continue in the right place: with the next
 						// sibling of the newly created emphasis node.
 						child = emphasisNode
@@ -292,6 +288,8 @@ func processEmphasis(n *Node) {
 					// Push it onto the stack.
 					stack = append(stack, stackEntry{c, delimsStart, numDelims, child})
 				}
+			} else {
+				i++
 			}
 		}
 	}
