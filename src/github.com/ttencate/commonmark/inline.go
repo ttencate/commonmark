@@ -146,7 +146,15 @@ func processCodeSpans(n *Node, text []byte) {
 				n.AppendChild(NewNode(&Text{precedingText}))
 				n.AppendChild(NewNode(&CodeSpan{code}))
 				textStart = i
-				delete(backtickStringsByLength, numBackticks)
+				// Code spans are never nested, so any subsequent string can
+				// never match any seen before.
+				// The spec is ambiguous about what happens in this case, e.g.:
+				// `` `foo` `` can become either
+				// <code>`foo`</code>
+				// or
+				// `` <code>foo</code> ``
+				// TODO file a spec bug about this when I can get online again
+				backtickStringsByLength = make(map[int]int)
 			} else {
 				// No previous string of this length encountered. Store as
 				// potential opener.
