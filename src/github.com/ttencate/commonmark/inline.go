@@ -50,11 +50,11 @@ func parseInlines(n *Node, text []byte) {
 	// https://github.com/jgm/CommonMark/issues/176
 	n.SetContent(&Text{trimWhitespaceRight(text)})
 
-	applyRecursively(n, toText(processRawHTML))
-	applyRecursively(n, toText(processCodeSpans))
-	applyRecursively(n, toText(processEmphasis))
-	applyRecursively(n, toText(processHardLineBreaks))
-	applyRecursively(n, toText(processSoftLineBreaks))
+	applyRecursively(n, forTextNodes(processRawHTML))
+	applyRecursively(n, forTextNodes(processCodeSpans))
+	applyRecursively(n, forTextNodes(processEmphasis))
+	applyRecursively(n, forTextNodes(processHardLineBreaks))
+	applyRecursively(n, forTextNodes(processSoftLineBreaks))
 }
 
 var asciiPunct = []byte("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
@@ -91,30 +91,27 @@ func trimWhitespaceRight(data []byte) []byte {
 }
 
 // applyRecursively applies the given function to each node in the tree in
-// turn. Parents first, then their children in order. If the function returns
-// false for any node, recursion does not descend into that node's children.
+// turn in a depth-first way, children first, then their parent.
 //
 // The function may modify the given node and its children, but must leave this
-// node in place and may not modify the tree above or around it.
-// TODO if it turns out we only use this with toText, merge the two
-func applyRecursively(n *Node, f func(*Node) bool) {
-	if f(n) {
-		for child := n.FirstChild(); child != nil; child = child.Next() {
-			applyRecursively(child, f)
-		}
+// node in place and may not modify the tree above or around it. Note that any
+// new children will not be visited.
+func applyRecursively(n *Node, f func(*Node)) {
+	// TODO add maximum recursion depth to prevent stack overflow (possible
+	// denial-of-service attack vector)
+	for child := n.FirstChild(); child != nil; child = child.Next() {
+		applyRecursively(child, f)
 	}
+	f(n)
 }
 
-// toText returns a function that can be given to applyRecursively. The
-// returned function applies f to Text nodes, passing in the text content, and
-// returning false for text nodes only.
-func toText(f func(*Node, []byte)) func(*Node) bool {
-	return func(n *Node) bool {
+// forTextNodes returns a function that can be given to applyRecursively. The
+// returned function applies f to Text nodes, passing in the text content.
+func forTextNodes(f func(*Node, []byte)) func(*Node) {
+	return func(n *Node) {
 		if t, ok := n.Content().(*Text); ok {
 			f(n, t.Content)
-			return false
 		}
-		return true
 	}
 }
 
