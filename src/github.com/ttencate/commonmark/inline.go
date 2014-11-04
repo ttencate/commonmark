@@ -18,6 +18,11 @@ type Text struct {
 	Content []byte
 }
 
+// BackslashEscape is the NodeContent for characters escaped with a backslash.
+type BackslashEscape struct {
+	Content []byte
+}
+
 // CodeSpan is the NodeContent for inline code spans.
 type CodeSpan struct {
 	Content []byte
@@ -52,6 +57,7 @@ func parseInlines(n *Node, text []byte) {
 
 	applyRecursively(n, forTextNodes(processRawHTML))
 	applyRecursively(n, forTextNodes(processCodeSpans))
+	applyRecursively(n, forTextNodes(processBackslashEscapes))
 	applyRecursively(n, processEmphasis)
 	applyRecursively(n, forTextNodes(processHardLineBreaks))
 	applyRecursively(n, forTextNodes(processSoftLineBreaks))
@@ -115,6 +121,26 @@ func forTextNodes(f func(*Node, []byte)) func(*Node) {
 	}
 }
 
+func processBackslashEscapes(n *Node, text []byte) {
+	doneAnySplits := false
+	for i := 0; i < len(text)-1; {
+		if text[i] == '\\' && isASCIIPunct(text[i+1]) {
+			if !doneAnySplits {
+				n.AppendChild(NewNode(&Text{text}))
+				n.SetContent(nil)
+				n = n.FirstChild()
+				doneAnySplits = true
+			}
+			n = splitTextNode(n, i, i+2)
+			n.InsertBefore(NewNode(&BackslashEscape{text[i+1 : i+2]}))
+			text = n.Content().(*Text).Content
+			i = 0
+		} else {
+			i++
+		}
+	}
+}
+
 func processCodeSpans(n *Node, text []byte) {
 	// "A backtick string is a string of one or more backtick characters (`)
 	// that is neither preceded nor followed by a backtick. A code span begins
@@ -136,6 +162,9 @@ func processCodeSpans(n *Node, text []byte) {
 		var backtickStringsByLength = make(map[int]int)
 		for i := 0; i < len(text); i++ {
 			if text[i] != '`' {
+				continue
+			}
+			if i > 0 && text[i-1] == '\\' {
 				continue
 			}
 			// Determine length of backtick string.
@@ -346,6 +375,9 @@ func processRawHTML(n *Node, text []byte) {
 	n.SetContent(nil)
 	textStart := 0
 	for i := 0; i < len(m); i++ {
+		if m[i][0] > 0 && text[m[i][0]-1] == '\\' {
+			continue
+		}
 		n.AppendChild(NewNode(&Text{text[textStart:m[i][0]]}))
 		n.AppendChild(NewNode(&RawHTML{text[m[i][0]:m[i][1]]}))
 		textStart = m[i][1]

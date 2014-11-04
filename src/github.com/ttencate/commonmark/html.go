@@ -49,6 +49,8 @@ func contentHTML(c NodeContent, out io.Writer) bool {
 	switch t := c.(type) {
 	case *Text:
 		writeEscaped(t.Content, out)
+	case *BackslashEscape:
+		writeEscaped(t.Content, out)
 	case *CodeSpan:
 		writeEscaped(t.Content, out)
 	case *RawHTML:
