@@ -124,11 +124,11 @@ func processCodeSpans(n *Node, text []byte) {
 	// and consecutive spaces and newlines collapsed to single spaces.
 
 	// Store previously seen, non-matched backtick strings by length.
-	type stackEntry struct {
-		start  int
-		length int
-	}
-	var stack []stackEntry
+	// TODO This is buggy for overlapping spans, use a stack. Consider this case:
+	// ``foo`bar``biz`
+	// The second `` will match the first, and take the single ` up into the
+	// code span, but the second ` will still try to match it.
+	var backtickStringsByLength = make(map[int]int)
 	numBackticks := 0
 	textStart := 0
 	for i := 0; i <= len(text); i++ {
@@ -136,28 +136,21 @@ func processCodeSpans(n *Node, text []byte) {
 			numBackticks++
 		} else if numBackticks > 0 {
 			// End of backtick string. See if we have seen a matching one.
-			var j int
-			for j = len(stack) - 1; j >= 0; j-- {
-				if stack[j].length == numBackticks {
-					break
-				}
-			}
-			if j >= 0 {
+			if opener, found := backtickStringsByLength[numBackticks]; found {
 				// Previous string of matching length exists. Extract code
 				// span.
-				entry := stack[j]
-				precedingText := text[textStart:entry.start]
-				code := text[entry.start+numBackticks : i-numBackticks]
+				precedingText := text[textStart:opener]
+				code := text[opener+numBackticks : i-numBackticks]
 				code = bytes.Trim(code, " \n")
 				code = collapseSpace(code)
 				n.AppendChild(NewNode(&Text{precedingText}))
 				n.AppendChild(NewNode(&CodeSpan{code}))
 				textStart = i
-				stack = stack[:j]
+				delete(backtickStringsByLength, numBackticks)
 			} else {
 				// No previous string of this length encountered. Store as
 				// potential opener.
-				stack = append(stack, stackEntry{i - numBackticks, numBackticks})
+				backtickStringsByLength[numBackticks] = i - numBackticks
 			}
 			numBackticks = 0
 		}
