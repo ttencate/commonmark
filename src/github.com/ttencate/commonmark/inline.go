@@ -18,6 +18,12 @@ type Text struct {
 	Content []byte
 }
 
+// LiteralText is the NodeContent for text that should not be touched during
+// processing anymore.
+type LiteralText struct {
+	Content []byte
+}
+
 // BackslashEscape is the NodeContent for characters escaped with a backslash.
 type BackslashEscape struct {
 	Content []byte
@@ -32,6 +38,11 @@ type CodeSpan struct {
 // escaping.
 type RawHTML struct {
 	Content []byte
+}
+
+// Link is the NodeContent for links.
+type Link struct {
+	Href []byte
 }
 
 // Emphasis is the NodeContent for emphasis, typically rendered as italic text.
@@ -57,6 +68,7 @@ func parseInlines(n *Node, text []byte) {
 
 	applyRecursively(n, forTextNodes(processRawHTML))
 	applyRecursively(n, forTextNodes(processCodeSpans))
+	applyRecursively(n, forTextNodes(processAutolinks))
 	applyRecursively(n, forTextNodes(processBackslashEscapes))
 	applyRecursively(n, processEmphasis)
 	applyRecursively(n, forTextNodes(processHardLineBreaks))
@@ -380,6 +392,56 @@ func processRawHTML(n *Node, text []byte) {
 		}
 		n.AppendChild(NewNode(&Text{text[textStart:m[i][0]]}))
 		n.AppendChild(NewNode(&RawHTML{text[m[i][0]:m[i][1]]}))
+		textStart = m[i][1]
+	}
+	n.AppendChild(NewNode(&Text{text[textStart:]}))
+}
+
+// "The following schemes are recognized (case-insensitive): ..."
+var scheme = `(?i:coap|doi|javascript|aaa|aaas|about|acap|cap|cid|crid|data|dav|dict|dns|file|ftp|geo|go|gopher|h323|http|https|iax|icap|im|imap|info|ipp|iris|iris\.beep|iris\.xpc|iris\.xpcs|iris\.lwz|ldap|mailto|mid|msrp|msrps|mtqp|mupdate|news|nfs|ni|nih|nntp|opaquelocktoken|pop|pres|rtsp|service|session|shttp|sieve|sip|sips|sms|snmp|soap\.beep|soap\.beeps|tag|tel|telnet|tftp|thismessage|tn3270|tip|tv|urn|vemmi|ws|wss|xcon|xcon-userid|xmlrpc\.beep|xmlrpc\.beeps|xmpp|z39\.50r|z39\.50s|adiumxtra|afp|afs|aim|apt|attachment|aw|beshare|bitcoin|bolo|callto|chrome|chrome-extension|com-eventbrite-attendee|content|cvs|dlna-playsingle|dlna-playcontainer|dtn|dvb|ed2k|facetime|feed|finger|fish|gg|git|gizmoproject|gtalk|hcp|icon|ipn|irc|irc6|ircs|itms|jar|jms|keyparc|lastfm|ldaps|magnet|maps|market|message|mms|ms-help|msnim|mumble|mvn|notes|oid|palm|paparazzi|platform|proxy|psyc|query|res|resource|rmi|rsync|rtmp|secondlife|sftp|sgn|skype|smb|soldat|spotify|ssh|steam|svn|teamspeak|things|udp|unreal|ut2004|ventrilo|view-source|webcal|wtai|wyciwyg|xfire|xri|ymsgr)`
+
+// "An absolute URI, for these purposes, consists of a scheme followed by a
+// colon (:) followed by zero or more characters other than ASCII whitespace
+// and control characters, <, and >."
+var absoluteURI = scheme + ":[^[:space:][:cntrl:]<>]*"
+
+// "An email address, for these purposes, is anything that matches the non-normative regex from the HTML5 spec:"
+var emailAddress = "[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*"
+
+// "A URI autolink consists of <, followed by an absolute URI not containing <,
+// followed by >."
+// "An email autolink consists of <, followed by an email address, followed by
+// >. The link’s label is the email address, and the URL is mailto: followed by
+// the email address."
+var autolinkRe = regexp.MustCompile(`<(?:(` + absoluteURI + `)|(` + emailAddress + `))>`)
+
+var mailto = []byte("mailto:")
+
+func processAutolinks(n *Node, text []byte) {
+	m := autolinkRe.FindAllSubmatchIndex(text, -1)
+	if len(m) == 0 {
+		return
+	}
+	n.SetContent(nil)
+	textStart := 0
+	for i := 0; i < len(m); i++ {
+		// TODO there is no test in the spec for escaped \<autolink>; file bug
+		if m[i][0] > 0 && text[m[i][0]-1] == '\\' {
+			continue
+		}
+		n.AppendChild(NewNode(&Text{text[textStart:m[i][0]]}))
+		var uri []byte
+		var content []byte
+		if m[i][2] >= 0 {
+			uri = text[m[i][2]:m[i][3]]
+			content = text[m[i][2]:m[i][3]]
+		} else {
+			uri = append(mailto, text[m[i][4]:m[i][5]]...)
+			content = text[m[i][4]:m[i][5]]
+		}
+		linkNode := NewNode(&Link{uri})
+		linkNode.AppendChild(NewNode(&LiteralText{content}))
+		n.AppendChild(linkNode)
 		textStart = m[i][1]
 	}
 	n.AppendChild(NewNode(&Text{text[textStart:]}))
