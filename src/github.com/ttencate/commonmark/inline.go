@@ -123,29 +123,35 @@ func processCodeSpans(n *Node, text []byte) {
 	// backtick strings, with leading and trailing spaces and newlines removed,
 	// and consecutive spaces and newlines collapsed to single spaces.
 
+	textNode := NewNode(&Text{text})
+	n.AppendChild(textNode)
+	n.SetContent(nil)
+
 	// Store previously seen, non-matched backtick strings by length.
 	// TODO This is buggy for overlapping spans, use a stack. Consider this case:
 	// ``foo`bar``biz`
 	// The second `` will match the first, and take the single ` up into the
 	// code span, but the second ` will still try to match it.
-	var backtickStringsByLength = make(map[int]int)
-	numBackticks := 0
-	textStart := 0
-	for i := 0; i <= len(text); i++ {
-		if i < len(text) && text[i] == '`' {
-			numBackticks++
-		} else if numBackticks > 0 {
-			// End of backtick string. See if we have seen a matching one.
+	for textNode != nil {
+		var backtickStringsByLength = make(map[int]int)
+		for i := 0; i < len(text); i++ {
+			if text[i] != '`' {
+				continue
+			}
+			// Determine length of backtick string.
+			numBackticks := 0
+			for ; i < len(text) && text[i] == '`'; i++ {
+				numBackticks++
+			}
+			// At end of backtick string. See if we have seen a matching one.
 			if opener, found := backtickStringsByLength[numBackticks]; found {
 				// Previous string of matching length exists. Extract code
 				// span.
-				precedingText := text[textStart:opener]
 				code := text[opener+numBackticks : i-numBackticks]
 				code = bytes.Trim(code, " \n")
 				code = collapseSpace(code)
-				n.AppendChild(NewNode(&Text{precedingText}))
-				n.AppendChild(NewNode(&CodeSpan{code}))
-				textStart = i
+				textNode = splitTextNode(textNode, opener, i)
+				textNode.InsertBefore(NewNode(&CodeSpan{code}))
 				// Code spans are never nested, so any subsequent string can
 				// never match any seen before.
 				// The spec is ambiguous about what happens in this case, e.g.:
@@ -154,19 +160,26 @@ func processCodeSpans(n *Node, text []byte) {
 				// or
 				// `` <code>foo</code> ``
 				// TODO file a spec bug about this when I can get online again
-				backtickStringsByLength = make(map[int]int)
+				break
 			} else {
 				// No previous string of this length encountered. Store as
 				// potential opener.
 				backtickStringsByLength[numBackticks] = i - numBackticks
 			}
-			numBackticks = 0
 		}
+		// At the end of the last text node: we are done.
+		break
 	}
-	if textStart != 0 {
-		n.AppendChild(NewNode(&Text{text[textStart:]}))
-		n.SetContent(nil)
-	}
+}
+
+// splitTextNode splits off another node on the right of a Text node, possibly
+// omitting part of the intermediate text. It returns the newly created node.
+func splitTextNode(n *Node, endOfFirst, startOfSecond int) *Node {
+	text := n.Content().(*Text).Content
+	n.SetContent(&Text{text[:endOfFirst]})
+	right := NewNode(&Text{text[startOfSecond:]})
+	n.InsertAfter(right)
+	return right
 }
 
 func processEmphasis(n *Node, text []byte) {
