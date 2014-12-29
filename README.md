@@ -15,7 +15,7 @@ Installing
 Documentation
 -------------
 
-- TODO find out how to get documentation up on godoc.org
+See [the generated documentation on godoc.org](https://godoc.org/github.com/ttencate/commonmark).
 
 Developing
 ----------
