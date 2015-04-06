@@ -5,7 +5,7 @@ CommonMark for Go
 standards-compliant, pluggable and fast [CommonMark](http://commonmark.org)
 implementation for [Go](http://golang.org) (golang).
 
-It is currently being implemented, and not ready for use yet.
+It is not ready for use, and probably never will be. As it turns out, writing a CommonMark implementation that (a) conforms to the spec, (b) does not mirror the inextensible, inflexible design of the reference implementation, and (c) is pluggable, is harder than I estimated, and I don't have time for it.
 
 Installing
 ----------
