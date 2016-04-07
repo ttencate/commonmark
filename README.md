@@ -48,7 +48,4 @@ Alternatives
 - [valoox/gomk](https://github.com/valoox/gomk), at the time of writing (Oct
   2014), claims to be a "Go implementation of the standard CommonMark markdown
   parser" but contains no code yet.
-- There might be a case for wrapping the
-  [official C implementation](https://github.com/jgm/CommonMark) in a Go
-  library. It will not be pluggable, but it will likely be faster. At the time
-  of writing (Oct 2014), no such wrapper exists.
+- [go-commonmark](https://github.com/rhinoman/go-commonmark) is a Go wrapper around the [official C implementation](https://github.com/jgm/CommonMark).
